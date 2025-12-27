@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import jsQR from 'jsqr'
 
 type Props = {
@@ -13,10 +13,6 @@ export function ScannerQR({ aoLer }: Props) {
 
   const [ativo, setAtivo] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
-
-  const podeUsarCamera = useMemo(() => {
-    return typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia
-  }, [])
 
   useEffect(() => {
     let stream: MediaStream | null = null
@@ -34,6 +30,14 @@ export function ScannerQR({ aoLer }: Props) {
         const video = videoRef.current
         if (!video) return
 
+        // 🔴 CRÍTICO PARA iOS
+        video.setAttribute('playsinline', 'true')
+        video.setAttribute('muted', 'true')
+        video.setAttribute('autoplay', 'true')
+        video.muted = true
+        video.playsInline = true
+        video.autoplay = true
+
         video.srcObject = stream
         await video.play()
 
@@ -45,22 +49,18 @@ export function ScannerQR({ aoLer }: Props) {
         const lerFrame = () => {
           if (!videoRef.current || !canvasRef.current) return
 
-          const v = videoRef.current
-          const c = canvasRef.current
+          if (video.readyState >= 2) {
+            canvas.width = video.videoWidth
+            canvas.height = video.videoHeight
 
-          if (v.readyState >= 2) {
-            c.width = v.videoWidth
-            c.height = v.videoHeight
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
 
-            ctx.drawImage(v, 0, 0, c.width, c.height)
-
-            const imageData = ctx.getImageData(0, 0, c.width, c.height)
             const code = jsQR(imageData.data, imageData.width, imageData.height, {
               inversionAttempts: 'attemptBoth',
             })
 
             if (code?.data) {
-              // encontrou QR
               aoLer(code.data)
               parar()
               return
@@ -86,44 +86,36 @@ export function ScannerQR({ aoLer }: Props) {
         stream = null
       }
 
-      const video = videoRef.current
-      if (video) video.srcObject = null
+      if (videoRef.current) {
+        videoRef.current.srcObject = null
+      }
+
       setAtivo(false)
     }
 
     if (ativo) iniciar()
 
-    return () => {
-      parar()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ativo])
+    return () => parar()
+  }, [ativo, aoLer])
 
   return (
     <div className="space-y-3 rounded border p-3">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between">
         <div>
           <div className="font-medium">Leitura por câmera</div>
           <div className="text-sm opacity-80">
-            Aponte para o QR da caixa para preencher automaticamente.
+            Aponte para o QR da caixa
           </div>
         </div>
 
         <button
+          type="button"
           className="rounded border px-3 py-2 text-sm font-medium"
           onClick={() => setAtivo((v) => !v)}
-          disabled={!podeUsarCamera}
-          type="button"
         >
           {ativo ? 'Parar' : 'Iniciar'}
         </button>
       </div>
-
-      {!podeUsarCamera && (
-        <p className="text-sm text-red-600">
-          Este navegador não suporta câmera via Web.
-        </p>
-      )}
 
       {erro && <p className="text-sm text-red-600">{erro}</p>}
 
@@ -134,12 +126,10 @@ export function ScannerQR({ aoLer }: Props) {
             className="w-full rounded border"
             playsInline
             muted
+            autoPlay
           />
-          {/* canvas invisível só para leitura */}
           <canvas ref={canvasRef} className="hidden" />
-          <p className="text-sm opacity-80">
-            Lendo... (mantenha o QR dentro da imagem)
-          </p>
+          <p className="text-sm opacity-80">Lendo QR…</p>
         </div>
       )}
     </div>
