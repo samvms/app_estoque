@@ -63,6 +63,15 @@ export function FormLogin() {
       >
         {carregando ? 'Entrando...' : 'Entrar'}
       </button>
+
+      <button
+        type="button"
+        onClick={() => router.push('/signup')}
+        className="w-full rounded border px-3 py-2 font-medium bg-transparent"
+      >
+        Criar conta
+      </button>
+
     </form>
   )
 }
