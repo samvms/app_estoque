@@ -1,3 +1,4 @@
+// src/modules/inventory/ui/ScannerQR.tsx
 'use client'
 
 import { useRef, useState } from 'react'
@@ -5,14 +6,20 @@ import jsQR from 'jsqr'
 
 type Props = {
   aoLer: (valor: string) => void
+  modo?: 'single' | 'continuous'
+  cooldownMs?: number
 }
 
-export function ScannerQR({ aoLer }: Props) {
+export function ScannerQR({ aoLer, modo = 'single', cooldownMs = 1200 }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   const streamRef = useRef<MediaStream | null>(null)
   const rafRef = useRef<number | null>(null)
+
+  // anti-loop
+  const bloqueadoAteRef = useRef<number>(0)
+  const ultimoValorRef = useRef<string | null>(null)
 
   const [ativo, setAtivo] = useState(false)
   const [status, setStatus] = useState<'parado' | 'iniciando' | 'lendo'>('parado')
@@ -35,6 +42,9 @@ export function ScannerQR({ aoLer }: Props) {
       video.srcObject = null
     }
 
+    bloqueadoAteRef.current = 0
+    ultimoValorRef.current = null
+
     setAtivo(false)
     setStatus('parado')
   }
@@ -45,7 +55,11 @@ export function ScannerQR({ aoLer }: Props) {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
         audio: false,
       })
 
@@ -58,11 +72,7 @@ export function ScannerQR({ aoLer }: Props) {
         return
       }
 
-      // ✅ NÃO dependa de "ativo" para renderizar o <video>.
-      // ✅ Ative a UI assim que o stream conecta.
       video.srcObject = stream
-
-      // atributos importantes
       video.setAttribute('playsinline', 'true')
       video.setAttribute('muted', 'true')
       video.setAttribute('autoplay', 'true')
@@ -72,9 +82,8 @@ export function ScannerQR({ aoLer }: Props) {
 
       setAtivo(true)
 
-      // esperar metadata com timeout (evita travar pra sempre)
       await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('timeout_loadedmetadata')), 3000)
+        const timeout = setTimeout(() => reject(new Error('timeout_loadedmetadata')), 3500)
         const handler = () => {
           clearTimeout(timeout)
           video.removeEventListener('loadedmetadata', handler)
@@ -83,7 +92,6 @@ export function ScannerQR({ aoLer }: Props) {
         video.addEventListener('loadedmetadata', handler)
       })
 
-      // tentar dar play (em alguns navegadores pode falhar, então capturamos)
       try {
         await video.play()
       } catch (e: any) {
@@ -112,9 +120,28 @@ export function ScannerQR({ aoLer }: Props) {
           })
 
           if (code?.data) {
+            const agora = Date.now()
+
+            if (agora < bloqueadoAteRef.current) {
+              rafRef.current = requestAnimationFrame(lerFrame)
+              return
+            }
+
+            if (ultimoValorRef.current === code.data) {
+              bloqueadoAteRef.current = agora + cooldownMs
+              rafRef.current = requestAnimationFrame(lerFrame)
+              return
+            }
+
+            ultimoValorRef.current = code.data
+            bloqueadoAteRef.current = agora + cooldownMs
+
             aoLer(code.data)
-            parar()
-            return
+
+            if (modo === 'single') {
+              parar()
+              return
+            }
           }
         }
 
@@ -123,7 +150,6 @@ export function ScannerQR({ aoLer }: Props) {
 
       rafRef.current = requestAnimationFrame(lerFrame)
     } catch (e: any) {
-      // mensagens bem claras
       const msg =
         e?.message === 'timeout_loadedmetadata'
           ? 'A câmera foi autorizada, mas o vídeo não inicializou (timeout).'
@@ -149,12 +175,13 @@ export function ScannerQR({ aoLer }: Props) {
           <div className="font-medium">Leitura por câmera</div>
           <div className="text-sm opacity-80">
             Status: {status === 'parado' ? 'parado' : status === 'iniciando' ? 'iniciando' : 'lendo'}
+            {modo === 'continuous' ? ' (contínuo)' : ''}
           </div>
         </div>
 
         <button
           type="button"
-          className="rounded border px-3 py-2 text-sm font-medium"
+          className="rounded border px-4 py-3 text-sm font-medium"
           onClick={alternar}
         >
           {ativo ? 'Parar' : 'Iniciar'}
@@ -163,19 +190,16 @@ export function ScannerQR({ aoLer }: Props) {
 
       {erro && <p className="text-sm text-red-600">{erro}</p>}
 
-      {/* ✅ Sempre renderiza o video (não usa display:none) */}
       <div className="space-y-2">
         <video
           ref={videoRef}
-          className="w-full rounded border bg-black"
+          className="w-full min-h-[220px] rounded border bg-black object-cover"
           playsInline
           muted
           autoPlay
         />
         <canvas ref={canvasRef} className="hidden" />
-        <p className="text-sm opacity-80">
-          {ativo ? 'Aponte para o QR…' : 'Clique em Iniciar para abrir a câmera.'}
-        </p>
+        <p className="text-sm opacity-80">{ativo ? 'Aponte para o QR…' : 'Clique em Iniciar para abrir a câmera.'}</p>
       </div>
     </div>
   )
