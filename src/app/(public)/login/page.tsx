@@ -2,8 +2,7 @@ import { FormLogin } from '@/modules/auth/ui/FormLogin'
 
 export default function LoginPage() {
   return (
-    <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Login</h1>
+    <div className="mx-auto w-full max-w-md px-4 py-6">
       <FormLogin />
     </div>
   )

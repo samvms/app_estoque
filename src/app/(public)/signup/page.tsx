@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-
+import { RetroWindow, RetroButton } from '@/modules/shared/ui/retro'
 
 type FormState = {
   nome: string
@@ -29,6 +29,8 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+
+  const disabled = useMemo(() => loading, [loading])
 
   function onChange<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -70,165 +72,136 @@ export default function SignupPage() {
 
       if (error) throw error
 
-      // Se email confirmation estiver ligada, session pode vir null
       if (!data.session) {
-        setSuccess('Se o cadastro for possível, enviamos um e-mail de confirmação. Se você já tiver conta, use "Esqueci minha senha".')
+        setSuccess(
+          'Se o cadastro for possível, enviamos um e-mail de confirmação. Se você já tiver conta, use "Esqueci minha senha".'
+        )
         return
       }
 
-      // Se não precisar confirmar email, já loga e segue
-      router.push('/')
+      router.push('/dashboard')
+      router.refresh()
     } catch (err: any) {
-      const msg =
+      setError(
         err?.message ||
-        'Não foi possível criar sua conta. Verifique os dados e tente novamente.'
-      setError(msg)
+          'Não foi possível criar sua conta. Verifique os dados e tente novamente.'
+      )
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div style={{ maxWidth: 420, margin: '40px auto', padding: 16 }}>
-      <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Criar conta</h1>
-      <p style={{ marginBottom: 16, opacity: 0.8 }}>
-        Cadastro para acessar o Estoque Operacional.
-      </p>
+    <div className="mx-auto w-full max-w-md px-4 py-6">
+      <RetroWindow title="Criar conta" subtitle="Cadastro para acessar o Estoque Operacional">
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="space-y-1">
+            <label className="text-sm">Nome</label>
+            <input
+              className="w-full rounded border px-3 py-3 text-base"
+              value={form.nome}
+              onChange={(e) => onChange('nome', e.target.value)}
+              placeholder="Seu nome"
+              autoComplete="name"
+              required
+            />
+          </div>
 
-      <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 10 }}>
-        <label>
-          Nome
-          <input
-            value={form.nome}
-            onChange={(e) => onChange('nome', e.target.value)}
-            placeholder="Seu nome"
-            autoComplete="name"
-            required
-            style={inputStyle}
-          />
-        </label>
+          <div className="space-y-1">
+            <label className="text-sm">Telefone (opcional)</label>
+            <input
+              className="w-full rounded border px-3 py-3 text-base"
+              value={form.telefone}
+              onChange={(e) => onChange('telefone', e.target.value)}
+              placeholder="(11) 99999-9999"
+              autoComplete="tel"
+            />
+          </div>
 
-        <label>
-          Telefone (opcional)
-          <input
-            value={form.telefone}
-            onChange={(e) => onChange('telefone', e.target.value)}
-            placeholder="(11) 99999-9999"
-            autoComplete="tel"
-            style={inputStyle}
-          />
-        </label>
+          <div className="space-y-1">
+            <label className="text-sm">Código da empresa (opcional)</label>
+            <input
+              className="w-full rounded border px-3 py-3 text-base"
+              value={form.empresaCodigo}
+              onChange={(e) => onChange('empresaCodigo', e.target.value)}
+              placeholder="SMARTWAY"
+            />
+          </div>
 
-        <label>
-          Código da empresa (opcional)
-          <input
-            value={form.empresaCodigo}
-            onChange={(e) => onChange('empresaCodigo', e.target.value)}
-            placeholder="SMARTWAY"
-            style={inputStyle}
-          />
-        </label>
+          <div className="space-y-1">
+            <label className="text-sm">E-mail</label>
+            <input
+              className="w-full rounded border px-3 py-3 text-base"
+              value={form.email}
+              onChange={(e) => onChange('email', e.target.value)}
+              placeholder="voce@empresa.com"
+              autoComplete="email"
+              inputMode="email"
+              required
+            />
+          </div>
 
-        <label>
-          E-mail
-          <input
-            value={form.email}
-            onChange={(e) => onChange('email', e.target.value)}
-            placeholder="voce@empresa.com"
-            autoComplete="email"
-            required
-            style={inputStyle}
-          />
-        </label>
+          <div className="space-y-1">
+            <label className="text-sm">Senha</label>
+            <input
+              type="password"
+              className="w-full rounded border px-3 py-3 text-base"
+              value={form.senha}
+              onChange={(e) => onChange('senha', e.target.value)}
+              placeholder="mín. 8 caracteres"
+              autoComplete="new-password"
+              required
+            />
+          </div>
 
-        <label>
-          Senha
-          <input
-            type="password"
-            value={form.senha}
-            onChange={(e) => onChange('senha', e.target.value)}
-            placeholder="mín. 8 caracteres"
-            autoComplete="new-password"
-            required
-            style={inputStyle}
-          />
-        </label>
+          <div className="space-y-1">
+            <label className="text-sm">Confirmar senha</label>
+            <input
+              type="password"
+              className="w-full rounded border px-3 py-3 text-base"
+              value={form.confirmarSenha}
+              onChange={(e) => onChange('confirmarSenha', e.target.value)}
+              placeholder="repita a senha"
+              autoComplete="new-password"
+              required
+            />
+          </div>
 
-        <label>
-          Confirmar senha
-          <input
-            type="password"
-            value={form.confirmarSenha}
-            onChange={(e) => onChange('confirmarSenha', e.target.value)}
-            placeholder="repita a senha"
-            autoComplete="new-password"
-            required
-            style={inputStyle}
-          />
-        </label>
+          {error ? (
+            <div className="rounded border p-3 text-sm">
+              <p className="font-semibold">Erro</p>
+              <p className="opacity-80">{error}</p>
+            </div>
+          ) : success ? (
+            <div className="rounded border p-3 text-sm">
+              <p className="font-semibold">Ok</p>
+              <p className="opacity-80">{success}</p>
+            </div>
+          ) : null}
 
-        {error ? (
-          <div style={alertErrorStyle}>{error}</div>
-        ) : success ? (
-          <div style={alertSuccessStyle}>{success}</div>
-        ) : null}
+          <RetroButton type="submit" className="w-full py-3" disabled={disabled}>
+            {loading ? 'Criando...' : 'Criar conta'}
+          </RetroButton>
 
-        <button type="submit" disabled={loading} style={buttonStyle}>
-          {loading ? 'Criando...' : 'Criar conta'}
-        </button>
+          <div className="grid gap-2 md:grid-cols-2">
+            <RetroButton
+              type="button"
+              className="w-full py-3"
+              onClick={() => router.push('/reset-password')}
+            >
+              Esqueci minha senha
+            </RetroButton>
 
-        <button
-        type="button"
-        onClick={() => router.push('/reset-password')}
-        style={linkButtonStyle}
-        >
-        Esqueci minha senha
-        </button>
-
-        <button
-          type="button"
-          onClick={() => router.push('/login')}
-          style={linkButtonStyle}
-        >
-          Já tenho conta → Login
-        </button>
-      </form>
+            <RetroButton
+              type="button"
+              className="w-full py-3"
+              onClick={() => router.push('/login')}
+            >
+              Já tenho conta
+            </RetroButton>
+          </div>
+        </form>
+      </RetroWindow>
     </div>
   )
-}
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '10px 12px',
-  borderRadius: 10,
-  border: '1px solid #ddd',
-  marginTop: 6,
-}
-
-const buttonStyle: React.CSSProperties = {
-  padding: '10px 12px',
-  borderRadius: 10,
-  border: 0,
-  cursor: 'pointer',
-  fontWeight: 700,
-}
-
-const linkButtonStyle: React.CSSProperties = {
-  padding: '10px 12px',
-  borderRadius: 10,
-  border: '1px solid #ddd',
-  cursor: 'pointer',
-  background: 'transparent',
-}
-
-const alertErrorStyle: React.CSSProperties = {
-  padding: 10,
-  borderRadius: 10,
-  border: '1px solid #f3b4b4',
-}
-
-const alertSuccessStyle: React.CSSProperties = {
-  padding: 10,
-  borderRadius: 10,
-  border: '1px solid #b7e3b7',
 }

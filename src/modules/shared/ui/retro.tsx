@@ -32,6 +32,7 @@ export function RetroAppShell(props: { title?: string; children: React.ReactNode
 
 export function RetroWindow(props: {
   title: string
+  subtitle?: string
   children: React.ReactNode
   className?: string
   rightSlot?: React.ReactNode
@@ -39,10 +40,16 @@ export function RetroWindow(props: {
   return (
     <section className={cx('retro-window', props.className)}>
       <div className="retro-titlebar">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <span className="retro-dot" />
-          <div className="retro-titlebar__title">{props.title}</div>
+          <div className="min-w-0">
+            <div className="retro-titlebar__title">{props.title}</div>
+            {props.subtitle ? (
+              <div className="text-xs opacity-80 leading-tight">{props.subtitle}</div>
+            ) : null}
+          </div>
         </div>
+
         <div className="flex items-center gap-2">
           {props.rightSlot}
           <div className="flex gap-1">
@@ -52,10 +59,12 @@ export function RetroWindow(props: {
           </div>
         </div>
       </div>
+
       <div className="p-3 md:p-4">{props.children}</div>
     </section>
   )
 }
+
 
 export function RetroButton(props: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'default' | 'danger' }) {
   const { className, variant = 'default', ...rest } = props

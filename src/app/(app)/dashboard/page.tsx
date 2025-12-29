@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { RetroWindow, RetroButton, RetroBadge } from '@/modules/shared/ui/retro'
 
@@ -26,6 +27,8 @@ function fmt(dt: string | null) {
 }
 
 export default function DashboardPage() {
+  const router = useRouter()
+
   const [loading, setLoading] = useState(false)
   const [bootLoading, setBootLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
@@ -47,22 +50,39 @@ export default function DashboardPage() {
       return
     }
 
-    const row = Array.isArray(data) ? (data[0] as StatusOperacional | undefined) : undefined
+    const row = Array.isArray(data)
+      ? (data[0] as StatusOperacional | undefined)
+      : undefined
+
     setStatus(row ?? null)
+  }
+
+  async function logout() {
+    setErr(null)
+    setLoading(true)
+
+    const { error } = await supabase.auth.signOut()
+
+    setLoading(false)
+
+    if (error) {
+      setErr(error.message)
+      return
+    }
+
+    router.push('/login')
+    router.refresh()
   }
 
   useEffect(() => {
     carregar()
 
-    // Recarrega leve quando o usuário volta pro app (muito comum em PWA no celular)
     const onVis = () => {
       if (document.visibilityState === 'visible') carregar()
     }
-    document.addEventListener('visibilitychange', onVis)
 
-    return () => {
-      document.removeEventListener('visibilitychange', onVis)
-    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
   }, [])
 
   const temContagemAberta = !!status?.contagem_aberta_id
@@ -70,8 +90,11 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-4">
-      <RetroWindow title="Atalhos operacionais" rightSlot={<RetroBadge tone="info">MVP</RetroBadge>}>
-        {/* Mobile first: 1 coluna; em md vira 2 */}
+      <RetroWindow
+        title="Atalhos operacionais"
+        subtitle="Acesso rápido às operações"
+        rightSlot={<RetroBadge tone="info">MVP</RetroBadge>}
+      >
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <Link href="/contagens" prefetch={false}>
             <RetroButton className="w-full py-3">Contagens</RetroButton>
@@ -84,15 +107,22 @@ export default function DashboardPage() {
 
       <RetroWindow
         title="Status"
+        subtitle="Situação operacional atual"
         rightSlot={
-          <RetroButton onClick={carregar} disabled={loading}>
-            {loading ? 'Atualizando...' : 'Atualizar'}
-          </RetroButton>
+          <div className="flex gap-2">
+            <RetroButton onClick={carregar} disabled={loading}>
+              {loading ? 'Atualizando...' : 'Atualizar'}
+            </RetroButton>
+            <RetroButton variant="danger" onClick={logout} disabled={loading}>
+              Sair
+            </RetroButton>
+          </div>
         }
       >
-        {err ? <div className="text-sm font-bold text-red-700">{err}</div> : null}
+        {err ? (
+          <div className="text-sm font-bold text-red-700">{err}</div>
+        ) : null}
 
-        {/* Mobile first: 1 coluna; em md 2; em lg 3 */}
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
           <div className="retro-panel">
             <div className="retro-panel__title">Contagem</div>
@@ -108,8 +138,13 @@ export default function DashboardPage() {
                   <div><b>Iniciada:</b> {fmt(status?.contagem_aberta_iniciada_em)}</div>
 
                   <div className="mt-2">
-                    <Link href={`/contagens/${status!.contagem_aberta_id}`} prefetch={false}>
-                      <RetroButton className="w-full py-3">Entrar</RetroButton>
+                    <Link
+                      href={`/contagens/${status!.contagem_aberta_id}`}
+                      prefetch={false}
+                    >
+                      <RetroButton className="w-full py-3">
+                        Entrar
+                      </RetroButton>
                     </Link>
                   </div>
                 </>
@@ -132,8 +167,13 @@ export default function DashboardPage() {
                   <div><b>Criado:</b> {fmt(status?.recebimento_aberto_criado_em)}</div>
 
                   <div className="mt-2">
-                    <Link href={`/recebimentos/${status!.recebimento_aberto_id}`} prefetch={false}>
-                      <RetroButton className="w-full py-3">Entrar</RetroButton>
+                    <Link
+                      href={`/recebimentos/${status!.recebimento_aberto_id}`}
+                      prefetch={false}
+                    >
+                      <RetroButton className="w-full py-3">
+                        Entrar
+                      </RetroButton>
                     </Link>
                   </div>
                 </>
