@@ -86,10 +86,14 @@ export default function ImportarProdutosPage() {
       transformHeader: (h) => normalizeHeader(h),
       complete: (res) => {
         if (res.errors?.length) {
-          const first = res.errors[0]
-          setErr(`Falha ao ler CSV (${first.code}) na linha ${first.row + 1}.`)
-          return
+            const first = res.errors[0]
+            const line =
+                typeof first.row === 'number' ? first.row + 1 : 'desconhecida'
+
+            setErr(`Falha ao ler CSV (${first.code}) na linha ${line}.`)
+            return
         }
+
 
         const data = (res.data ?? []) as LinhaCsv[]
 
