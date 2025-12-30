@@ -1,9 +1,11 @@
-// src/app/(app)/contagens/page.tsx
+// src/app/(app)/contagens/[id]/page.tsx
 'use client'
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
+
 import { supabase } from '@/lib/supabase/client'
+import { ScannerQR } from '@/modules/inventory/ui/ScannerQR'
 import { Card, Button, Badge } from '@/modules/shared/ui/app'
 
 type Contagem = {
@@ -12,9 +14,29 @@ type Contagem = {
   status: 'ABERTA' | 'FECHADA'
   iniciada_em: string | null
   finalizada_em: string | null
+  criada_por: string | null
   estoque_antes: number | null
   estoque_contado: number | null
   diferenca: number | null
+}
+
+type LocalEstoque = {
+  id: string
+  nome: string
+  ativo: boolean
+}
+
+type ContagemStats = {
+  contagem_id: string
+  total_bipado: number
+  ultimo_bipado_em: string | null
+}
+
+type QrLabelRow = {
+  nome_modelo: string
+  cor: string
+  sku: string
+  nome_exibicao: string
 }
 
 function shortId(id: string, n = 8) {
@@ -23,19 +45,48 @@ function shortId(id: string, n = 8) {
 
 function fmtDateTime(iso: string | null) {
   if (!iso) return '-'
-  return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+  const d = new Date(iso)
+  return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
 }
 
-function toneForStatus(status: Contagem['status']): 'info' | 'ok' | 'warn' {
+function mapErroOperacional(msg: string) {
+  const m = (msg || '').toLowerCase()
+  if (m.includes('contagem_invalida') || m.includes('contagem inválida')) return 'Contagem inválida ou já fechada.'
+  if (m.includes('local_obrigatorio') || m.includes('local obrigatório')) return 'Local é obrigatório.'
+  return msg.length > 90 ? 'Erro ao bipar.' : msg
+}
+
+function toneStatus(status: Contagem['status']): 'info' | 'ok' | 'warn' {
   return status === 'ABERTA' ? 'info' : 'ok'
 }
 
-export default function ContagensPage() {
+export default function ContagemDetalhePage() {
   const router = useRouter()
+  const params = useParams<{ id: string }>()
+  const contagemId = params?.id
 
-  const [contagens, setContagens] = useState<Contagem[]>([])
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
+
+  const [contagem, setContagem] = useState<Contagem | null>(null)
+  const [locais, setLocais] = useState<LocalEstoque[]>([])
+  const [localId, setLocalId] = useState<string>('')
+
+  const [stats, setStats] = useState<ContagemStats | null>(null)
+  const [ultimoQr, setUltimoQr] = useState<string>('')
+  const [ultimoLabel, setUltimoLabel] = useState<string>('')
+
+  const [toast, setToast] = useState<string | null>(null)
+  const [modalFechar, setModalFechar] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  const modoLeitura = useMemo(() => contagem?.status === 'FECHADA', [contagem?.status])
+
+  const showToast = useCallback((msg: string) => {
+    setToast(msg)
+    window.clearTimeout((showToast as any)._t)
+    ;(showToast as any)._t = window.setTimeout(() => setToast(null), 2200)
+  }, [])
 
   const rpc = useCallback(async <T,>(fn: string, args?: Record<string, any>) => {
     const { data, error } = await supabase.schema('app_estoque').rpc(fn, args ?? {})
@@ -43,32 +94,126 @@ export default function ContagensPage() {
     return data as T
   }, [])
 
+  const resolverLabel = useCallback(
+    async (qr: string) => {
+      // se vier uuid com hífen ou sem, a rpc espera uuid; aqui assume que qr já é uuid (padrão do sistema)
+      const { data, error } = await supabase.schema('app_estoque').rpc('fn_resolver_qr_label', { p_qr_code: qr })
+      if (error) return null
+      const row = (Array.isArray(data) ? data[0] : null) as QrLabelRow | null
+      if (!row) return null
+      const label = `${row.nome_modelo} • ${row.cor}`
+      return label
+    },
+    []
+  )
+
   const carregar = useCallback(async () => {
+    if (!contagemId) return
     setLoading(true)
     setErro(null)
 
     try {
-      const data = await rpc<Contagem[] | null>('fn_listar_contagens')
-      setContagens(Array.isArray(data) ? data : [])
+      const c = await rpc<Contagem[] | null>('fn_obter_contagem', { p_contagem_id: contagemId })
+      const cont = Array.isArray(c) ? c[0] : null
+      if (!cont) throw new Error('Contagem não encontrada ou sem permissão.')
+      setContagem(cont)
+
+      const ls = await rpc<LocalEstoque[]>('fn_listar_locais')
+      setLocais(ls ?? [])
+
+      const st = await rpc<ContagemStats[] | null>('fn_contagem_stats', { p_contagem_id: contagemId })
+      const st0 = Array.isArray(st) ? st[0] : null
+      setStats(st0 ?? { contagem_id: contagemId, total_bipado: 0, ultimo_bipado_em: null })
+
+      if (!localId && (ls?.length ?? 0) === 1) setLocalId(ls[0].id)
     } catch (e: any) {
-      setErro(e?.message ?? 'Erro ao carregar contagens.')
-      setContagens([])
+      setErro(e?.message ?? 'Erro ao carregar contagem.')
     } finally {
       setLoading(false)
     }
-  }, [rpc])
+  }, [contagemId, localId, rpc])
+
+  const refetchStats = useCallback(async () => {
+    if (!contagemId) return
+    try {
+      const st = await rpc<ContagemStats[] | null>('fn_contagem_stats', { p_contagem_id: contagemId })
+      const st0 = Array.isArray(st) ? st[0] : null
+      if (st0) setStats(st0)
+    } catch {}
+  }, [contagemId, rpc])
 
   useEffect(() => {
     carregar()
-  }, [carregar])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contagemId])
 
-  const abertas = useMemo(() => contagens.filter((c) => c.status === 'ABERTA'), [contagens])
-  const fechadas = useMemo(() => contagens.filter((c) => c.status === 'FECHADA'), [contagens])
-  const contagemAberta = useMemo(() => abertas[0] ?? null, [abertas])
+  const bipar = useCallback(
+    async (valor: string) => {
+      if (busy) return
+      setErro(null)
+
+      if (!localId) {
+        showToast('Local é obrigatório para bipar.')
+        return
+      }
+      if (!contagemId) return
+      if (modoLeitura) {
+        showToast('Contagem fechada. Apenas leitura.')
+        return
+      }
+
+      setBusy(true)
+      try {
+        const qr = String(valor || '').trim()
+        if (!qr) {
+          showToast('QR inválido.')
+          return
+        }
+
+        await rpc<any>('fn_bipar_na_contagem', {
+          p_contagem_id: contagemId,
+          p_qr_code: qr,
+          p_local_id: localId,
+        })
+
+        setUltimoQr(qr)
+        const lbl = await resolverLabel(qr)
+        if (lbl) setUltimoLabel(lbl)
+
+        void refetchStats()
+      } catch (e: any) {
+        showToast(mapErroOperacional(e?.message ?? 'Erro ao bipar.'))
+      } finally {
+        setBusy(false)
+      }
+    },
+    [busy, contagemId, localId, modoLeitura, refetchStats, resolverLabel, rpc, showToast]
+  )
+
+  const fecharContagem = useCallback(async () => {
+    if (!contagemId) return
+    if (busy) return
+
+    setBusy(true)
+    setErro(null)
+
+    try {
+      await rpc<any>('fn_fechar_contagem', { p_contagem_id: contagemId })
+      setModalFechar(false)
+      await carregar()
+      showToast('Contagem fechada.')
+    } catch (e: any) {
+      setErro(e?.message ?? 'Erro ao fechar contagem.')
+    } finally {
+      setBusy(false)
+    }
+  }, [busy, carregar, contagemId, rpc, showToast])
+
+  const canScan = !!localId && !modoLeitura && !busy
 
   if (loading) {
     return (
-      <Card title="Contagens" subtitle="Carregando dados…">
+      <Card title="Contagem" subtitle="Carregando…">
         <div className="text-sm text-app-muted">Carregando…</div>
       </Card>
     )
@@ -76,14 +221,14 @@ export default function ContagensPage() {
 
   if (erro) {
     return (
-      <Card title="Erro" subtitle="Não foi possível carregar contagens">
+      <Card title="Erro" subtitle="Não foi possível carregar a contagem">
         <div className="space-y-3">
           <div className="text-sm font-semibold text-red-600">{erro}</div>
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-            <Button className="w-full py-3" variant="ghost" onClick={() => router.back()}>
+            <Button className="w-full py-3" variant="ghost" onClick={() => router.back()} disabled={busy}>
               Voltar
             </Button>
-            <Button className="w-full py-3" onClick={carregar}>
+            <Button className="w-full py-3" onClick={carregar} disabled={busy}>
               Tentar novamente
             </Button>
           </div>
@@ -92,127 +237,199 @@ export default function ContagensPage() {
     )
   }
 
-  return (
-    <div className="space-y-4">
-      <Card
-        title="Contagens"
-        subtitle={`Abertas: ${abertas.length} • Fechadas: ${fechadas.length}`}
-        rightSlot={
-          <Button onClick={carregar} disabled={loading} variant="ghost">
-            {loading ? 'Atualizando…' : 'Atualizar'}
-          </Button>
-        }
-      >
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-2 md:items-center">
-          <Button className="w-full py-3" variant="ghost" onClick={() => router.back()}>
+  if (!contagem) {
+    return (
+      <Card title="Contagem" subtitle="Não encontrada">
+        <div className="space-y-3">
+          <div className="text-sm text-app-muted">Contagem não encontrada.</div>
+          <Button className="w-full py-3" variant="ghost" onClick={() => router.back()} disabled={busy}>
             Voltar
           </Button>
+        </div>
+      </Card>
+    )
+  }
 
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2 md:justify-end lg:flex lg:justify-end">
-            <Button className="w-full py-3 lg:w-auto" onClick={() => router.push('/contagens/abrir')}>
-              Abrir nova contagem
+  return (
+    <div className="space-y-3">
+      {toast ? (
+        <div className="fixed left-3 right-3 top-3 z-50 app-card px-4 py-3 text-sm font-semibold md:left-auto md:right-6 md:top-6 md:w-[420px]">
+          {toast}
+        </div>
+      ) : null}
+
+      <Card
+        title={`Contagem ${contagem.tipo}`}
+        subtitle={`ID: …${shortId(contagem.id)} • Iniciada: ${fmtDateTime(contagem.iniciada_em)}${
+          contagem.finalizada_em ? ` • Finalizada: ${fmtDateTime(contagem.finalizada_em)}` : ''
+        }`}
+        rightSlot={<Badge tone={toneStatus(contagem.status)}>{contagem.status}</Badge>}
+      >
+        <div className="flex flex-col gap-2 md:flex-row md:justify-between md:items-center">
+          <div className="text-xs text-app-muted">
+            {modoLeitura ? 'Modo leitura' : 'Modo operacional'} • {busy ? 'Processando…' : 'Pronto'}
+          </div>
+
+          <div className="flex flex-col gap-2 md:flex-row md:justify-end">
+            <Button className="w-full py-3 md:w-auto" variant="ghost" onClick={() => router.back()} disabled={busy}>
+              Voltar
             </Button>
 
-            {contagemAberta ? (
+            {!modoLeitura ? (
               <Button
-                className="w-full py-3 lg:w-auto"
-                variant="secondary"
-                onClick={() => router.push(`/contagens/${contagemAberta.id}`)}
-                title="Atalho para a contagem ABERTA"
+                className="w-full py-3 md:w-auto"
+                variant="danger"
+                onClick={() => setModalFechar(true)}
+                disabled={busy}
               >
-                Entrar na ABERTA
+                Fechar contagem
               </Button>
             ) : null}
           </div>
         </div>
       </Card>
 
-      <Card title="Abertas" rightSlot={<Badge tone="info">{abertas.length} item(ns)</Badge>}>
-        {abertas.length === 0 ? (
-          <div className="text-sm text-app-muted">Nenhuma contagem aberta.</div>
-        ) : (
-          <div className="grid gap-3">
-            {abertas.map((c) => (
-              <div key={c.id} className="app-card">
-                <div className="flex items-start justify-between gap-3 border-b border-app-border px-4 py-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="text-sm font-semibold text-app-fg">{c.tipo}</div>
-                      <Badge tone={toneForStatus(c.status)}>{c.status}</Badge>
+      {modoLeitura ? (
+        <>
+          <Card title="Resumo" subtitle="Valores finais da contagem">
+            <div className="grid gap-2 text-sm">
+              <div>
+                Estoque antes: <b className="text-app-fg">{contagem.estoque_antes ?? 0}</b>
+              </div>
+              <div>
+                Estoque contado: <b className="text-app-fg">{contagem.estoque_contado ?? 0}</b>
+              </div>
+              <div>
+                Diferença: <b className="text-app-fg">{contagem.diferenca ?? 0}</b>
+              </div>
+            </div>
+          </Card>
+
+          <Card title="Bipagens" subtitle="Indicadores de operação">
+            <div className="grid gap-2 text-sm">
+              <div>
+                Total bipado: <b className="text-app-fg">{stats?.total_bipado ?? 0}</b>
+              </div>
+              <div>
+                Último bipado em: <b className="text-app-fg">{fmtDateTime(stats?.ultimo_bipado_em ?? null)}</b>
+              </div>
+            </div>
+          </Card>
+        </>
+      ) : (
+        <>
+          <Card title="Local de estoque" subtitle="Obrigatório para bipar">
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-app-fg">Local</label>
+              <select
+                value={localId}
+                onChange={(e) => setLocalId(e.target.value)}
+                disabled={busy}
+                className="w-full rounded-xl border border-app-border bg-white px-3 py-3 text-sm font-medium text-app-fg outline-none"
+              >
+                <option value="">Selecione…</option>
+                {locais.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.nome}
+                  </option>
+                ))}
+              </select>
+
+              {!localId ? <div className="text-xs text-app-muted">Selecione um local para bipar.</div> : null}
+            </div>
+          </Card>
+
+          <Card
+            title="Scanner"
+            subtitle="Leitura contínua (anti-loop)"
+            rightSlot={<Badge tone={busy ? 'warn' : 'info'}>{busy ? 'Processando…' : 'Pronto'}</Badge>}
+          >
+            <div className="space-y-3">
+              <div className="relative overflow-hidden rounded-2xl border border-app-border bg-white">
+                <ScannerQR
+                  modo="continuous"
+                  cooldownMs={1200}
+                  aoLer={(valor) => void bipar(valor)}
+                  // NOVO: mostra modelo+cor no overlay do scanner
+                  resolverLabel={async (qr) => {
+                    const lbl = await resolverLabel(qr)
+                    return lbl
+                  }}
+                />
+
+                {/* bloqueio real: não deixa ler sem local */}
+                {!canScan ? (
+                  <div className="absolute inset-0 grid place-items-center bg-white/92 p-4 text-center">
+                    <div className="max-w-[260px]">
+                      <div className="text-sm font-semibold text-app-fg">
+                        {!localId ? 'Selecione um local' : busy ? 'Processando…' : 'Scanner bloqueado'}
+                      </div>
+                      <div className="mt-1 text-xs text-app-muted">
+                        {!localId
+                          ? 'O scanner fica bloqueado até escolher.'
+                          : 'Aguarde concluir a bipagem.'}
+                      </div>
                     </div>
-                    <div className="mt-1 text-xs text-app-muted">ID: …{shortId(c.id)}</div>
                   </div>
+                ) : null}
+              </div>
 
-                  <div className="text-xs text-app-muted">
-                    Iniciada: <span className="font-semibold text-app-fg">{fmtDateTime(c.iniciada_em)}</span>
-                  </div>
+              <div className="grid gap-1 text-sm">
+                <div>
+                  <b>Último QR:</b> {ultimoQr ? `…${shortId(ultimoQr, 8)}` : '-'}
                 </div>
-
-                <div className="px-4 py-4">
-                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:flex">
-                    <Button className="w-full py-3 lg:w-auto" onClick={() => router.push(`/contagens/${c.id}`)}>
-                      Entrar
-                    </Button>
-                    <Button
-                      className="w-full py-3 lg:w-auto"
-                      variant="ghost"
-                      onClick={() => router.push(`/contagens/${c.id}/resumo`)}
-                    >
-                      Ver resumo
-                    </Button>
-                  </div>
+                <div>
+                  <b>Último produto:</b> {ultimoLabel || '-'}
+                </div>
+                <div>
+                  <b>Total bipado:</b> {stats?.total_bipado ?? 0}
+                </div>
+                <div>
+                  <b>Último:</b> {fmtDateTime(stats?.ultimo_bipado_em ?? null)}
+                </div>
+                <div>
+                  <b>Local atual:</b> {localId ? locais.find((l) => l.id === localId)?.nome ?? '-' : '-'}
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-      </Card>
 
-      <Card title="Fechadas" rightSlot={<Badge tone="info">{fechadas.length} item(ns)</Badge>}>
-        {fechadas.length === 0 ? (
-          <div className="text-sm text-app-muted">Nenhuma contagem fechada.</div>
-        ) : (
-          <div className="grid gap-3">
-            {fechadas.map((c) => (
-              <div key={c.id} className="app-card">
-                <div className="flex items-start justify-between gap-3 border-b border-app-border px-4 py-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="text-sm font-semibold text-app-fg">{c.tipo}</div>
-                      <Badge tone={toneForStatus(c.status)}>{c.status}</Badge>
-                    </div>
-                    <div className="mt-1 text-xs text-app-muted">ID: …{shortId(c.id)}</div>
-                  </div>
-
-                  <div className="text-xs text-app-muted">
-                    Finalizada:{' '}
-                    <span className="font-semibold text-app-fg">{fmtDateTime(c.finalizada_em)}</span>
-                  </div>
-                </div>
-
-                <div className="px-4 py-4 space-y-2">
-                  <div className="text-xs text-app-muted">
-                    Iniciada: <span className="font-semibold text-app-fg">{fmtDateTime(c.iniciada_em)}</span> •{' '}
-                    Finalizada: <span className="font-semibold text-app-fg">{fmtDateTime(c.finalizada_em)}</span>
-                  </div>
-
-                  <div className="text-xs text-app-muted">
-                    Antes: <b className="text-app-fg">{c.estoque_antes ?? 0}</b> • Contado:{' '}
-                    <b className="text-app-fg">{c.estoque_contado ?? 0}</b> • Dif:{' '}
-                    <b className="text-app-fg">{c.diferenca ?? 0}</b>
-                  </div>
-
-                  <div>
-                    <Button className="w-full py-3 md:w-auto" variant="ghost" onClick={() => router.push(`/contagens/${c.id}/resumo`)}>
-                      Ver resumo
-                    </Button>
-                  </div>
-                </div>
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                <Button className="w-full py-3" variant="ghost" onClick={refetchStats} disabled={busy}>
+                  Atualizar total
+                </Button>
+                <Button className="w-full py-3" variant="secondary" onClick={carregar} disabled={busy}>
+                  Recarregar tela
+                </Button>
               </div>
-            ))}
+            </div>
+          </Card>
+        </>
+      )}
+
+      {modalFechar && !modoLeitura ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/35 p-4">
+          <div className="w-full max-w-md app-card px-5 py-5">
+            <div className="text-base font-semibold text-app-fg">Fechar contagem</div>
+
+            <div className="mt-2 space-y-2 text-sm text-app-fg">
+              <div className="text-app-muted">Ao fechar a contagem:</div>
+              <ul className="list-disc pl-5 text-app-fg">
+                <li>Caixas não bipadas serão marcadas como SAÍDA</li>
+                <li>O estoque será recalculado</li>
+                <li>Essa ação não pode ser desfeita</li>
+              </ul>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
+              <Button className="w-full py-3" variant="ghost" onClick={() => setModalFechar(false)} disabled={busy}>
+                Cancelar
+              </Button>
+              <Button className="w-full py-3" variant="danger" onClick={fecharContagem} disabled={busy}>
+                Confirmar e fechar
+              </Button>
+            </div>
           </div>
-        )}
-      </Card>
+        </div>
+      ) : null}
     </div>
   )
 }

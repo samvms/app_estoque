@@ -27,6 +27,13 @@ type ResumoLinha = {
   qtd_divergente: number
 }
 
+type QrLabelRow = {
+  nome_modelo: string
+  cor: string
+  sku: string
+  nome_exibicao: string
+}
+
 function fmtDateTime(iso: string | null) {
   if (!iso) return '-'
   return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
@@ -77,6 +84,7 @@ export default function RecebimentoDetalhePage() {
 
   const [toast, setToast] = useState<string | null>(null)
   const [ultimoQr, setUltimoQr] = useState<string>('')
+  const [ultimoLabel, setUltimoLabel] = useState<string>('')
 
   const [resumo, setResumo] = useState<ResumoLinha[]>([])
   const [modalFinalizar, setModalFinalizar] = useState<null | 'APROVADO' | 'REPROVADO'>(null)
@@ -93,6 +101,14 @@ export default function RecebimentoDetalhePage() {
     const { data, error } = await supabase.schema('app_estoque').rpc(fn, args ?? {})
     if (error) throw error
     return data as T
+  }, [])
+
+  const resolverLabel = useCallback(async (qr: string) => {
+    const { data, error } = await supabase.schema('app_estoque').rpc('fn_resolver_qr_label', { p_qr_code: qr })
+    if (error) return null
+    const row = (Array.isArray(data) ? data[0] : null) as QrLabelRow | null
+    if (!row) return null
+    return `${row.nome_modelo} • ${row.cor}`
   }, [])
 
   const carregar = useCallback(async () => {
@@ -124,9 +140,7 @@ export default function RecebimentoDetalhePage() {
     try {
       const resumo0 = await rpc<ResumoLinha[]>('fn_resumo_recebimento', { p_recebimento_id: recebimentoId })
       setResumo(resumo0 ?? [])
-    } catch {
-      // silencioso
-    }
+    } catch {}
   }, [recebimentoId, rpc])
 
   useEffect(() => {
@@ -143,6 +157,11 @@ export default function RecebimentoDetalhePage() {
         return
       }
 
+      if (!localId) {
+        showToast('Local é obrigatório.')
+        return
+      }
+
       setBusy(true)
       try {
         const qr = String(valor || '').trim()
@@ -154,11 +173,14 @@ export default function RecebimentoDetalhePage() {
         await rpc<string>('fn_registrar_conferencia_recebimento', {
           p_recebimento_id: recebimentoId,
           p_qr_code: qr,
-          p_local_id: localId || null, // backend já exige local_obrigatorio
+          p_local_id: localId, // backend já exige
           p_resultado: resultado,
         })
 
         setUltimoQr(qr)
+        const lbl = await resolverLabel(qr)
+        if (lbl) setUltimoLabel(lbl)
+
         await refetchResumo()
       } catch (e: any) {
         showToast(mapErroOperacao(e?.message ?? 'Erro ao registrar conferência.'))
@@ -166,7 +188,7 @@ export default function RecebimentoDetalhePage() {
         setBusy(false)
       }
     },
-    [busy, isOperacional, localId, recebimentoId, refetchResumo, rpc, showToast]
+    [busy, isOperacional, localId, recebimentoId, refetchResumo, resolverLabel, rpc, showToast]
   )
 
   const finalizar = useCallback(
@@ -195,11 +217,12 @@ export default function RecebimentoDetalhePage() {
     [busy, carregar, recebimentoId, rpc, showToast]
   )
 
-  // Ordena: DIVERGENTE primeiro, depois OK, depois ABERTO
   const resumoOrdenado = useMemo(() => {
     const w = (s: ResumoLinha['status_item']) => (s === 'DIVERGENTE' ? 0 : s === 'OK' ? 1 : 2)
     return [...resumo].sort((a, b) => w(a.status_item) - w(b.status_item))
   }, [resumo])
+
+  const canScan = !!localId && isOperacional && !busy
 
   if (loading) {
     return (
@@ -263,7 +286,12 @@ export default function RecebimentoDetalhePage() {
                 <Button className="w-full py-3" onClick={() => setModalFinalizar('APROVADO')} disabled={busy}>
                   Aprovar
                 </Button>
-                <Button className="w-full py-3" variant="danger" onClick={() => setModalFinalizar('REPROVADO')} disabled={busy}>
+                <Button
+                  className="w-full py-3"
+                  variant="danger"
+                  onClick={() => setModalFinalizar('REPROVADO')}
+                  disabled={busy}
+                >
                   Reprovar
                 </Button>
               </>
@@ -315,20 +343,38 @@ export default function RecebimentoDetalhePage() {
           >
             <div className="space-y-3">
               <div className="relative overflow-hidden rounded-2xl border border-app-border bg-white">
-                <ScannerQR modo="continuous" cooldownMs={1200} aoLer={(valor) => void registrar(valor, 'OK')} />
+                <ScannerQR
+                  modo="continuous"
+                  cooldownMs={1200}
+                  aoLer={(valor) => void registrar(valor, 'OK')}
+                  // NOVO: mostra modelo+cor no overlay do scanner
+                  resolverLabel={async (qr) => {
+                    const lbl = await resolverLabel(qr)
+                    return lbl
+                  }}
+                />
 
-                {!localId ? (
-                  <div className="absolute inset-0 grid place-items-center bg-white/90 p-4 text-center">
+                {!canScan ? (
+                  <div className="absolute inset-0 grid place-items-center bg-white/92 p-4 text-center">
                     <div className="max-w-[260px]">
-                      <div className="text-sm font-semibold text-app-fg">Selecione um local</div>
-                      <div className="mt-1 text-xs text-app-muted">O scanner fica bloqueado até escolher.</div>
+                      <div className="text-sm font-semibold text-app-fg">
+                        {!localId ? 'Selecione um local' : busy ? 'Processando…' : 'Scanner bloqueado'}
+                      </div>
+                      <div className="mt-1 text-xs text-app-muted">
+                        {!localId ? 'O scanner fica bloqueado até escolher.' : 'Aguarde concluir a bipagem.'}
+                      </div>
                     </div>
                   </div>
                 ) : null}
               </div>
 
-              <div className="text-sm">
-                <b>Último QR:</b> {ultimoQr ? `…${shortId(ultimoQr, 8)}` : '-'}
+              <div className="grid gap-1 text-sm">
+                <div>
+                  <b>Último QR:</b> {ultimoQr ? `…${shortId(ultimoQr, 8)}` : '-'}
+                </div>
+                <div>
+                  <b>Último produto:</b> {ultimoLabel || '-'}
+                </div>
               </div>
 
               <Button

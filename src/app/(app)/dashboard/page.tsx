@@ -83,11 +83,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-4">
-      <Card
-        title="Atalhos operacionais"
-        subtitle="Acesso rápido às operações"
-        rightSlot={<Badge tone="info">MVP</Badge>}
-      >
+      <Card title="Atalhos operacionais" subtitle="Acesso rápido às operações" rightSlot={<Badge tone="info">MVP</Badge>}>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <Link href="/contagens" prefetch={false}>
             <Button className="w-full py-3">Contagens</Button>
@@ -96,6 +92,13 @@ export default function DashboardPage() {
           <Link href="/recebimentos" prefetch={false}>
             <Button className="w-full py-3" variant="secondary">
               Recebimentos
+            </Button>
+          </Link>
+
+          {/* NOVO */}
+          <Link href="/produtos" prefetch={false}>
+            <Button className="w-full py-3" variant="secondary">
+              Estoque
             </Button>
           </Link>
 

@@ -20,6 +20,10 @@ type VarianteRow = {
   cor: string
   nome_exibicao: string
   ativo: boolean
+
+  // NOVO
+  estoque_ok: number
+  estoque_saida: number
 }
 
 type VariantesState = {
@@ -43,7 +47,6 @@ export default function ProdutosPage() {
   const [q, setQ] = useState('')
   const [onlyAtivos, setOnlyAtivos] = useState(false)
 
-  // controle de expansão + cache de variantes por produto
   const [openId, setOpenId] = useState<string | null>(null)
   const [variantesByProduto, setVariantesByProduto] = useState<Record<string, VariantesState>>({})
 
@@ -65,7 +68,6 @@ export default function ProdutosPage() {
   }
 
   async function carregarVariantes(produtoId: string) {
-    // cache: se já carregou, não chama de novo
     const current = variantesByProduto[produtoId]
     if (current?.status === 'ready' || current?.status === 'loading') return
 
@@ -76,7 +78,7 @@ export default function ProdutosPage() {
 
     const { data, error } = await supabase
       .schema('app_estoque')
-      .rpc('fn_listar_variantes_por_produto', { p_produto_id: produtoId })
+      .rpc('fn_listar_variantes_por_produto_com_estoque', { p_produto_id: produtoId })
 
     if (error) {
       setVariantesByProduto((prev) => ({
@@ -122,7 +124,7 @@ export default function ProdutosPage() {
     <div className="space-y-4">
       <Card
         title="Produtos"
-        subtitle="Modelos + variantes (expanda um modelo para ver)"
+        subtitle="Modelos + variantes (com estoque por variante)"
         rightSlot={
           <div className="flex gap-2">
             <Button onClick={carregar} disabled={loading} variant="ghost">
@@ -149,7 +151,6 @@ export default function ProdutosPage() {
               <StatCard title="Ativas">{totals.ativas}</StatCard>
             </div>
 
-            {/* Busca / filtros */}
             <div className="rounded-2xl border bg-white p-4">
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                 <div className="md:col-span-2">
@@ -207,18 +208,12 @@ export default function ProdutosPage() {
                         </div>
 
                         <div className="flex flex-col gap-2">
-                          <Button
-                            onClick={() => toggleOpen(r.id)}
-                            variant="secondary"
-                            className="px-4"
-                            disabled={loading}
-                          >
+                          <Button onClick={() => toggleOpen(r.id)} variant="secondary" className="px-4" disabled={loading}>
                             {isOpen ? 'Fechar' : 'Ver variantes'}
                           </Button>
                         </div>
                       </div>
 
-                      {/* Variantes (lazy) */}
                       {isOpen ? (
                         <div className="mt-4 rounded-2xl border bg-slate-50 p-3">
                           {vstate?.status === 'loading' ? (
@@ -239,13 +234,26 @@ export default function ProdutosPage() {
                                   <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0">
                                       <div className="text-sm font-semibold text-slate-900 truncate">
-                                        {v.nome_exibicao || `${v.cor}`}
+                                        {v.nome_exibicao || v.cor}
                                       </div>
+
                                       <div className="mt-1 text-sm text-slate-700">
                                         <span className="font-mono">{v.sku}</span> • {v.cor}
                                       </div>
+
+                                      {/* NOVO: estoque */}
+                                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-700">
+                                        <span className="rounded-full border bg-white px-3 py-1">
+                                          Estoque: <b>{v.estoque_ok ?? 0}</b>
+                                        </span>
+                                        <span className="rounded-full border bg-white px-3 py-1">
+                                          Saída: <b>{v.estoque_saida ?? 0}</b>
+                                        </span>
+                                      </div>
+
                                       <div className="mt-2 font-mono text-xs break-all text-slate-500">{v.id}</div>
                                     </div>
+
                                     <Badge tone="info">{v.ativo ? 'Ativa' : 'Inativa'}</Badge>
                                   </div>
                                 </div>
