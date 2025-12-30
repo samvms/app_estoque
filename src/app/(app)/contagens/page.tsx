@@ -4,7 +4,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import { RetroWindow, RetroButton, RetroBadge } from '@/modules/shared/ui/retro'
+import { Card, Button, Badge } from '@/modules/shared/ui/app'
 
 type Contagem = {
   id: string
@@ -24,6 +24,10 @@ function shortId(id: string, n = 8) {
 function fmtDateTime(iso: string | null) {
   if (!iso) return '-'
   return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+}
+
+function toneForStatus(status: Contagem['status']): 'info' | 'ok' | 'warn' {
+  return status === 'ABERTA' ? 'info' : 'ok'
 }
 
 export default function ContagensPage() {
@@ -64,138 +68,151 @@ export default function ContagensPage() {
 
   if (loading) {
     return (
-      <RetroWindow title="Contagens">
-        <div className="text-sm opacity-80">Carregando…</div>
-      </RetroWindow>
+      <Card title="Contagens" subtitle="Carregando dados…">
+        <div className="text-sm text-app-muted">Carregando…</div>
+      </Card>
     )
   }
 
   if (erro) {
     return (
-      <RetroWindow title="Erro">
+      <Card title="Erro" subtitle="Não foi possível carregar contagens">
         <div className="space-y-3">
-          <div className="text-sm font-bold text-red-700">{erro}</div>
+          <div className="text-sm font-semibold text-red-600">{erro}</div>
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-            <RetroButton className="w-full py-3" onClick={() => router.back()}>
+            <Button className="w-full py-3" variant="ghost" onClick={() => router.back()}>
               Voltar
-            </RetroButton>
-            <RetroButton className="w-full py-3" onClick={carregar}>
+            </Button>
+            <Button className="w-full py-3" onClick={carregar}>
               Tentar novamente
-            </RetroButton>
+            </Button>
           </div>
         </div>
-      </RetroWindow>
+      </Card>
     )
   }
 
   return (
     <div className="space-y-4">
-      <RetroWindow
+      <Card
         title="Contagens"
+        subtitle={`Abertas: ${abertas.length} • Fechadas: ${fechadas.length}`}
         rightSlot={
-          <RetroButton onClick={carregar} disabled={loading}>
+          <Button onClick={carregar} disabled={loading} variant="ghost">
             {loading ? 'Atualizando…' : 'Atualizar'}
-          </RetroButton>
+          </Button>
         }
       >
-        <div className="grid gap-3 md:grid-cols-2 md:items-center">
-          <div className="space-y-1">
-            <div className="text-xs opacity-80">
-              Abertas: <b>{abertas.length}</b> • Fechadas: <b>{fechadas.length}</b>
-            </div>
-          </div>
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2 md:items-center">
+          <Button className="w-full py-3" variant="ghost" onClick={() => router.back()}>
+            Voltar
+          </Button>
 
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2 md:justify-end lg:flex lg:justify-end">
-            <RetroButton className="w-full py-3 lg:w-auto" onClick={() => router.back()}>
-              Voltar
-            </RetroButton>
-
-            <RetroButton className="w-full py-3 lg:w-auto" onClick={() => router.push('/contagens/abrir')}>
+            <Button className="w-full py-3 lg:w-auto" onClick={() => router.push('/contagens/abrir')}>
               Abrir nova contagem
-            </RetroButton>
+            </Button>
 
             {contagemAberta ? (
-              <RetroButton
+              <Button
                 className="w-full py-3 lg:w-auto"
+                variant="secondary"
                 onClick={() => router.push(`/contagens/${contagemAberta.id}`)}
                 title="Atalho para a contagem ABERTA"
               >
                 Entrar na ABERTA
-              </RetroButton>
+              </Button>
             ) : null}
           </div>
         </div>
-      </RetroWindow>
+      </Card>
 
-      <RetroWindow title="Abertas" rightSlot={<RetroBadge tone="info">{abertas.length} item(ns)</RetroBadge>}>
+      <Card title="Abertas" rightSlot={<Badge tone="info">{abertas.length} item(ns)</Badge>}>
         {abertas.length === 0 ? (
-          <div className="text-sm opacity-80">Nenhuma contagem aberta.</div>
+          <div className="text-sm text-app-muted">Nenhuma contagem aberta.</div>
         ) : (
           <div className="grid gap-3">
             {abertas.map((c) => (
-              <div key={c.id} className="retro-panel">
-                <div className="retro-panel__title">
-                  <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-                    <div className="font-black">
-                      {c.tipo}{' '}
-                      <span className="font-normal opacity-80">({c.status})</span>
+              <div key={c.id} className="app-card">
+                <div className="flex items-start justify-between gap-3 border-b border-app-border px-4 py-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-sm font-semibold text-app-fg">{c.tipo}</div>
+                      <Badge tone={toneForStatus(c.status)}>{c.status}</Badge>
                     </div>
-                    <div className="text-xs opacity-80">ID: …{shortId(c.id)}</div>
+                    <div className="mt-1 text-xs text-app-muted">ID: …{shortId(c.id)}</div>
+                  </div>
+
+                  <div className="text-xs text-app-muted">
+                    Iniciada: <span className="font-semibold text-app-fg">{fmtDateTime(c.iniciada_em)}</span>
                   </div>
                 </div>
 
-                <div className="mt-2 text-xs opacity-80">Iniciada: {fmtDateTime(c.iniciada_em)}</div>
-
-                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2 lg:flex">
-                  <RetroButton className="w-full py-3 lg:w-auto" onClick={() => router.push(`/contagens/${c.id}`)}>
-                    Entrar
-                  </RetroButton>
-                  <RetroButton className="w-full py-3 lg:w-auto" onClick={() => router.push(`/contagens/${c.id}/resumo`)}>
-                    Ver resumo
-                  </RetroButton>
+                <div className="px-4 py-4">
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:flex">
+                    <Button className="w-full py-3 lg:w-auto" onClick={() => router.push(`/contagens/${c.id}`)}>
+                      Entrar
+                    </Button>
+                    <Button
+                      className="w-full py-3 lg:w-auto"
+                      variant="ghost"
+                      onClick={() => router.push(`/contagens/${c.id}/resumo`)}
+                    >
+                      Ver resumo
+                    </Button>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
         )}
-      </RetroWindow>
+      </Card>
 
-      <RetroWindow title="Fechadas" rightSlot={<RetroBadge tone="info">{fechadas.length} item(ns)</RetroBadge>}>
+      <Card title="Fechadas" rightSlot={<Badge tone="info">{fechadas.length} item(ns)</Badge>}>
         {fechadas.length === 0 ? (
-          <div className="text-sm opacity-80">Nenhuma contagem fechada.</div>
+          <div className="text-sm text-app-muted">Nenhuma contagem fechada.</div>
         ) : (
           <div className="grid gap-3">
             {fechadas.map((c) => (
-              <div key={c.id} className="retro-panel">
-                <div className="retro-panel__title">
-                  <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-                    <div className="font-black">
-                      {c.tipo}{' '}
-                      <span className="font-normal opacity-80">({c.status})</span>
+              <div key={c.id} className="app-card">
+                <div className="flex items-start justify-between gap-3 border-b border-app-border px-4 py-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-sm font-semibold text-app-fg">{c.tipo}</div>
+                      <Badge tone={toneForStatus(c.status)}>{c.status}</Badge>
                     </div>
-                    <div className="text-xs opacity-80">ID: …{shortId(c.id)}</div>
+                    <div className="mt-1 text-xs text-app-muted">ID: …{shortId(c.id)}</div>
+                  </div>
+
+                  <div className="text-xs text-app-muted">
+                    Finalizada:{' '}
+                    <span className="font-semibold text-app-fg">{fmtDateTime(c.finalizada_em)}</span>
                   </div>
                 </div>
 
-                <div className="mt-2 text-xs opacity-80">
-                  Iniciada: {fmtDateTime(c.iniciada_em)} • Finalizada: {fmtDateTime(c.finalizada_em)}
-                </div>
+                <div className="px-4 py-4 space-y-2">
+                  <div className="text-xs text-app-muted">
+                    Iniciada: <span className="font-semibold text-app-fg">{fmtDateTime(c.iniciada_em)}</span> •{' '}
+                    Finalizada: <span className="font-semibold text-app-fg">{fmtDateTime(c.finalizada_em)}</span>
+                  </div>
 
-                <div className="mt-1 text-xs opacity-80">
-                  Antes: <b>{c.estoque_antes ?? 0}</b> • Contado: <b>{c.estoque_contado ?? 0}</b> • Dif:{' '}
-                  <b>{c.diferenca ?? 0}</b>
-                </div>
+                  <div className="text-xs text-app-muted">
+                    Antes: <b className="text-app-fg">{c.estoque_antes ?? 0}</b> • Contado:{' '}
+                    <b className="text-app-fg">{c.estoque_contado ?? 0}</b> • Dif:{' '}
+                    <b className="text-app-fg">{c.diferenca ?? 0}</b>
+                  </div>
 
-                <div className="mt-3">
-                  <RetroButton className="w-full py-3 md:w-auto" onClick={() => router.push(`/contagens/${c.id}/resumo`)}>
-                    Ver resumo
-                  </RetroButton>
+                  <div>
+                    <Button className="w-full py-3 md:w-auto" variant="ghost" onClick={() => router.push(`/contagens/${c.id}/resumo`)}>
+                      Ver resumo
+                    </Button>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
         )}
-      </RetroWindow>
+      </Card>
     </div>
   )
 }

@@ -3,6 +3,7 @@
 
 import { useRef, useState } from 'react'
 import jsQR from 'jsqr'
+import { Button, Badge } from '@/modules/shared/ui/app'
 
 type Props = {
   aoLer: (valor: string) => void
@@ -168,38 +169,56 @@ export function ScannerQR({ aoLer, modo = 'single', cooldownMs = 1200 }: Props) 
     await iniciar()
   }
 
+  const tone = status === 'lendo' ? 'ok' : status === 'iniciando' ? 'info' : 'warn'
+
   return (
-    <div className="space-y-3 rounded border p-3">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="font-medium">Leitura por câmera</div>
-          <div className="text-sm opacity-80">
-            Status: {status === 'parado' ? 'parado' : status === 'iniciando' ? 'iniciando' : 'lendo'}
-            {modo === 'continuous' ? ' (contínuo)' : ''}
+    <div className="app-card p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-app-fg">Leitura por câmera</div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-app-muted">
+            <span>Status:</span>
+            <Badge tone={tone}>
+              {status === 'parado' ? 'Parado' : status === 'iniciando' ? 'Iniciando' : 'Lendo'}
+              {modo === 'continuous' ? ' • Contínuo' : ''}
+            </Badge>
           </div>
         </div>
 
-        <button
-          type="button"
-          className="rounded border px-4 py-3 text-sm font-medium"
-          onClick={alternar}
-        >
+        <Button type="button" variant={ativo ? 'secondary' : 'primary'} className="px-4 py-3" onClick={alternar}>
           {ativo ? 'Parar' : 'Iniciar'}
-        </button>
+        </Button>
       </div>
 
-      {erro && <p className="text-sm text-red-600">{erro}</p>}
+      {erro ? (
+        <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {erro}
+        </div>
+      ) : null}
 
-      <div className="space-y-2">
-        <video
-          ref={videoRef}
-          className="w-full min-h-[220px] rounded border bg-black object-cover"
-          playsInline
-          muted
-          autoPlay
-        />
+      <div className="mt-3 space-y-2">
+        <div className="relative overflow-hidden rounded-2xl border border-app-border bg-black">
+          <video
+            ref={videoRef}
+            className="w-full min-h-[240px] object-cover"
+            playsInline
+            muted
+            autoPlay
+          />
+          {!ativo ? (
+            <div className="absolute inset-0 grid place-items-center bg-black/35 p-4 text-center">
+              <div className="rounded-2xl bg-white/95 px-4 py-3 text-sm font-semibold text-app-fg">
+                Clique em <b>Iniciar</b> para abrir a câmera.
+              </div>
+            </div>
+          ) : null}
+        </div>
+
         <canvas ref={canvasRef} className="hidden" />
-        <p className="text-sm opacity-80">{ativo ? 'Aponte para o QR…' : 'Clique em Iniciar para abrir a câmera.'}</p>
+
+        <p className="text-xs text-app-muted">
+          {ativo ? 'Aponte para o QR…' : 'Dica: use boa iluminação para leitura mais rápida.'}
+        </p>
       </div>
     </div>
   )

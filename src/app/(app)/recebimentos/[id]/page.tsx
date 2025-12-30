@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation'
 
 import { supabase } from '@/lib/supabase/client'
 import { ScannerQR } from '@/modules/inventory/ui/ScannerQR'
-import { RetroWindow, RetroButton, RetroField, RetroSelect, RetroBadge } from '@/modules/shared/ui/retro'
+import { Card, Button, Badge } from '@/modules/shared/ui/app'
 
 type Recebimento = {
   id: string
@@ -48,6 +48,18 @@ function mapErroOperacao(msg: string) {
   if (m.includes('caixa_sem_variante')) return 'Caixa sem variante vinculada.'
 
   return msg.length > 80 ? 'Erro na operação.' : msg
+}
+
+function toneReceb(status: Recebimento['status']): 'info' | 'ok' | 'warn' {
+  if (status === 'ABERTO') return 'info'
+  if (status === 'APROVADO') return 'ok'
+  return 'warn'
+}
+
+function toneItem(status: ResumoLinha['status_item']): 'info' | 'ok' | 'warn' {
+  if (status === 'DIVERGENTE') return 'warn'
+  if (status === 'OK') return 'ok'
+  return 'info'
 }
 
 export default function RecebimentoDetalhePage() {
@@ -183,29 +195,35 @@ export default function RecebimentoDetalhePage() {
     [busy, carregar, recebimentoId, rpc, showToast]
   )
 
+  // Ordena: DIVERGENTE primeiro, depois OK, depois ABERTO
+  const resumoOrdenado = useMemo(() => {
+    const w = (s: ResumoLinha['status_item']) => (s === 'DIVERGENTE' ? 0 : s === 'OK' ? 1 : 2)
+    return [...resumo].sort((a, b) => w(a.status_item) - w(b.status_item))
+  }, [resumo])
+
   if (loading) {
     return (
-      <RetroWindow title="Recebimento">
-        <div className="text-sm opacity-80">Carregando…</div>
-      </RetroWindow>
+      <Card title="Recebimento" subtitle="Carregando…">
+        <div className="text-sm text-app-muted">Carregando…</div>
+      </Card>
     )
   }
 
   if (erro) {
     return (
-      <RetroWindow title="Erro">
+      <Card title="Erro" subtitle="Não foi possível carregar o recebimento">
         <div className="space-y-3">
-          <div className="text-sm font-bold text-red-700">{erro}</div>
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-            <RetroButton className="w-full py-3" onClick={() => router.back()} disabled={busy}>
+          <div className="text-sm font-semibold text-red-600">{erro}</div>
+          <div className="grid grid-cols-1 gap-2">
+            <Button className="w-full py-3" variant="ghost" onClick={() => router.back()} disabled={busy}>
               Voltar
-            </RetroButton>
-            <RetroButton className="w-full py-3" onClick={carregar} disabled={busy}>
+            </Button>
+            <Button className="w-full py-3" onClick={carregar} disabled={busy}>
               Tentar novamente
-            </RetroButton>
+            </Button>
           </div>
         </div>
-      </RetroWindow>
+      </Card>
     )
   }
 
@@ -214,112 +232,108 @@ export default function RecebimentoDetalhePage() {
   return (
     <div className="space-y-3">
       {toast ? (
-        <div className="fixed left-3 right-3 top-3 z-50 border-2 border-black bg-white p-3 text-sm font-bold md:left-auto md:right-6 md:top-6 md:w-[420px]">
+        <div className="fixed left-3 right-3 top-3 z-50 app-card px-4 py-3 text-sm font-semibold md:left-auto md:right-6 md:top-6 md:w-[420px]">
           {toast}
         </div>
       ) : null}
 
-      <RetroWindow
+      <Card
         title="Recebimento"
+        subtitle={`Ref: ${recebimento.referencia || '(sem referência)'} • ID: …${shortId(recebimento.id)}`}
         rightSlot={
           <div className="flex items-center gap-2">
-            <RetroBadge tone={recebimento.status === 'ABERTO' ? 'ok' : 'warn'}>{recebimento.status}</RetroBadge>
-            <RetroBadge tone="info">{recebimento.tipo_conferencia}</RetroBadge>
+            <Badge tone={toneReceb(recebimento.status)}>{recebimento.status}</Badge>
+            <Badge tone="info">{recebimento.tipo_conferencia}</Badge>
           </div>
         }
       >
-        <div className="grid gap-3 md:grid-cols-2 md:items-center">
-          <div className="space-y-1 text-sm">
-            <div className="text-xs opacity-80">
-              Ref: {recebimento.referencia || '(sem referência)'} • ID: …{shortId(recebimento.id)}
-            </div>
-            <div className="text-xs opacity-80">
-              Criado: {fmtDateTime(recebimento.criado_em)} • Aprovado: {fmtDateTime(recebimento.aprovado_em)}
-            </div>
+        <div className="space-y-2">
+          <div className="text-xs text-app-muted">
+            Criado: <span className="font-semibold text-app-fg">{fmtDateTime(recebimento.criado_em)}</span> • Finalizado:{' '}
+            <span className="font-semibold text-app-fg">{fmtDateTime(recebimento.aprovado_em)}</span>
           </div>
 
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:flex lg:justify-end">
-            <RetroButton className="w-full py-3 lg:w-auto" onClick={() => router.back()} disabled={busy}>
+          <div className="grid grid-cols-1 gap-2">
+            <Button className="w-full py-3" variant="ghost" onClick={() => router.back()} disabled={busy}>
               Voltar
-            </RetroButton>
+            </Button>
 
             {isOperacional ? (
               <>
-                <RetroButton className="w-full py-3 lg:w-auto" onClick={() => setModalFinalizar('APROVADO')} disabled={busy}>
+                <Button className="w-full py-3" onClick={() => setModalFinalizar('APROVADO')} disabled={busy}>
                   Aprovar
-                </RetroButton>
-                <RetroButton
-                  variant="danger"
-                  className="w-full py-3 lg:w-auto"
-                  onClick={() => setModalFinalizar('REPROVADO')}
-                  disabled={busy}
-                >
+                </Button>
+                <Button className="w-full py-3" variant="danger" onClick={() => setModalFinalizar('REPROVADO')} disabled={busy}>
                   Reprovar
-                </RetroButton>
+                </Button>
               </>
             ) : null}
 
-            <RetroButton className="w-full py-3 lg:w-auto" onClick={refetchResumo} disabled={busy}>
+            <Button className="w-full py-3" variant="ghost" onClick={refetchResumo} disabled={busy}>
               Atualizar
-            </RetroButton>
+            </Button>
 
-            <RetroButton
-              className="w-full py-3 lg:w-auto"
+            <Button
+              className="w-full py-3"
+              variant="secondary"
               onClick={() => router.push(`/recebimentos/${recebimento.id}/resumo`)}
               disabled={busy}
             >
               Ver resumo
-            </RetroButton>
+            </Button>
           </div>
         </div>
-      </RetroWindow>
+      </Card>
 
       {isOperacional ? (
         <>
-          <RetroWindow title="Local (obrigatório)">
+          <Card title="Local" subtitle="Obrigatório antes de bipar">
             <div className="space-y-2">
-              <RetroField label="Local">
-                <RetroSelect
-                  value={localId}
-                  onChange={(e) => setLocalId(e.target.value)}
-                  disabled={busy}
-                  className="py-3"
-                >
-                  <option value="">Selecione…</option>
-                  {locais.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.nome}
-                    </option>
-                  ))}
-                </RetroSelect>
-              </RetroField>
+              <label className="text-sm font-semibold text-app-fg">Local</label>
+              <select
+                value={localId}
+                onChange={(e) => setLocalId(e.target.value)}
+                disabled={busy}
+                className="w-full rounded-xl border border-app-border bg-white px-3 py-3 text-sm font-medium text-app-fg outline-none"
+              >
+                <option value="">Selecione…</option>
+                {locais.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.nome}
+                  </option>
+                ))}
+              </select>
 
-              {!localId ? <div className="text-xs opacity-80">Selecione um local antes de bipar.</div> : null}
+              {!localId ? <div className="text-xs text-app-muted">Selecione um local antes de bipar.</div> : null}
             </div>
-          </RetroWindow>
+          </Card>
 
-          <RetroWindow
+          <Card
             title="Scanner"
-            rightSlot={<RetroBadge tone={busy ? 'warn' : 'info'}>{busy ? 'Processando…' : 'OK padrão'}</RetroBadge>}
+            subtitle="OK é o padrão (marque divergência no último QR se necessário)"
+            rightSlot={<Badge tone={busy ? 'warn' : 'info'}>{busy ? 'Processando…' : 'OK padrão'}</Badge>}
           >
             <div className="space-y-3">
-              <div className="relative">
+              <div className="relative overflow-hidden rounded-2xl border border-app-border bg-white">
                 <ScannerQR modo="continuous" cooldownMs={1200} aoLer={(valor) => void registrar(valor, 'OK')} />
 
                 {!localId ? (
-                  <div className="absolute inset-0 grid place-items-center border-2 border-dashed border-black bg-white/90 p-4 text-center font-black">
-                    Selecione um local
+                  <div className="absolute inset-0 grid place-items-center bg-white/90 p-4 text-center">
+                    <div className="max-w-[260px]">
+                      <div className="text-sm font-semibold text-app-fg">Selecione um local</div>
+                      <div className="mt-1 text-xs text-app-muted">O scanner fica bloqueado até escolher.</div>
+                    </div>
                   </div>
                 ) : null}
               </div>
 
-              <div className="grid gap-1 text-sm">
-                <div><b>Último QR:</b> {ultimoQr ? `…${shortId(ultimoQr, 8)}` : '-'}</div>
+              <div className="text-sm">
+                <b>Último QR:</b> {ultimoQr ? `…${shortId(ultimoQr, 8)}` : '-'}
               </div>
 
-              <RetroButton
-                variant="danger"
+              <Button
                 className="w-full py-3"
+                variant="danger"
                 disabled={busy || !localId}
                 onClick={() => {
                   const v = ultimoQr
@@ -329,57 +343,70 @@ export default function RecebimentoDetalhePage() {
                 title="Marca o último QR como divergente (caso tenha sido bipada como OK)"
               >
                 Marcar último como DIVERGENTE
-              </RetroButton>
+              </Button>
             </div>
-          </RetroWindow>
+          </Card>
         </>
       ) : null}
 
-      <RetroWindow
-        title="Resumo (modo escala por variante)"
-        rightSlot={<div className="text-xs opacity-80">{isOperacional ? 'Atualiza após bipagens' : 'Somente leitura'}</div>}
+      <Card
+        title="Resumo"
+        subtitle={isOperacional ? 'Atualiza após bipagens' : 'Somente leitura'}
+        rightSlot={<span className="text-xs text-app-muted">{resumo.length} item(ns)</span>}
       >
-        {resumo.length === 0 ? (
-          <div className="text-sm opacity-80">Nenhuma conferência registrada ainda.</div>
+        {resumoOrdenado.length === 0 ? (
+          <div className="text-sm text-app-muted">Nenhuma conferência registrada ainda.</div>
         ) : (
           <div className="grid gap-2">
-            {resumo.map((x) => (
-              <div key={x.produto_variante_id} className="border-2 border-black bg-white p-3">
-                <div className="text-xs font-black">Variante: …{shortId(x.produto_variante_id)}</div>
-                <div className="mt-1 text-sm">
-                  Status: <b>{x.status_item}</b> • OK: <b>{x.qtd_ok}</b> • Divergente: <b>{x.qtd_divergente}</b>
+            {resumoOrdenado.map((x) => (
+              <div key={x.produto_variante_id} className="app-card px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-xs text-app-muted">Variante</div>
+                    <div className="text-sm font-semibold text-app-fg">…{shortId(x.produto_variante_id)}</div>
+                  </div>
+
+                  <Badge tone={toneItem(x.status_item)}>{x.status_item}</Badge>
+                </div>
+
+                <div className="mt-2 text-sm text-app-muted">
+                  OK: <b className="text-app-fg">{x.qtd_ok}</b> • Divergente:{' '}
+                  <b className="text-app-fg">{x.qtd_divergente}</b>
                 </div>
               </div>
             ))}
           </div>
         )}
-      </RetroWindow>
+      </Card>
 
       {modalFinalizar ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/35 p-4">
-          <div className="w-full max-w-md border-2 border-black bg-white p-4">
-            <div className="mb-2 text-base font-black">Finalizar recebimento: {modalFinalizar}</div>
+          <div className="w-full max-w-md app-card px-5 py-5">
+            <div className="text-base font-semibold text-app-fg">Finalizar recebimento</div>
+            <div className="mt-1 flex items-center gap-2">
+              <Badge tone={modalFinalizar === 'APROVADO' ? 'ok' : 'warn'}>{modalFinalizar}</Badge>
+            </div>
 
-            <div className="space-y-2 text-sm">
+            <div className="mt-3 space-y-2 text-sm text-app-fg">
               <div>
                 Confirma finalizar o recebimento como <b>{modalFinalizar}</b>?
               </div>
-              <div className="text-xs opacity-80">Essa ação encerra o recebimento e bloqueia novas conferências.</div>
+              <div className="text-xs text-app-muted">Essa ação encerra o recebimento e bloqueia novas conferências.</div>
             </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
-              <RetroButton className="w-full py-3" onClick={() => setModalFinalizar(null)} disabled={busy}>
+            <div className="mt-4 grid grid-cols-1 gap-2">
+              <Button className="w-full py-3" variant="ghost" onClick={() => setModalFinalizar(null)} disabled={busy}>
                 Cancelar
-              </RetroButton>
+              </Button>
 
-              <RetroButton
-                variant={modalFinalizar === 'REPROVADO' ? 'danger' : 'default'}
+              <Button
                 className="w-full py-3"
+                variant={modalFinalizar === 'REPROVADO' ? 'danger' : 'secondary'}
                 onClick={() => finalizar(modalFinalizar)}
                 disabled={busy}
               >
                 Confirmar
-              </RetroButton>
+              </Button>
             </div>
           </div>
         </div>

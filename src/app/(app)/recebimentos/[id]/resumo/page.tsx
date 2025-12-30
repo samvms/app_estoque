@@ -4,7 +4,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import { RetroWindow, RetroButton, RetroBadge } from '@/modules/shared/ui/retro'
+import { Card, Button, Badge } from '@/modules/shared/ui/app'
 
 type Recebimento = {
   id: string
@@ -38,6 +38,18 @@ function shortId(id: string, n = 8) {
 function fmtDateTime(iso: string | null) {
   if (!iso) return '-'
   return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+}
+
+function toneReceb(status: Recebimento['status']): 'info' | 'ok' | 'warn' {
+  if (status === 'ABERTO') return 'info'
+  if (status === 'APROVADO') return 'ok'
+  return 'warn'
+}
+
+function toneItem(status: ResumoItem['status_item']): 'info' | 'ok' | 'warn' {
+  if (status === 'DIVERGENTE') return 'warn'
+  if (status === 'OK') return 'ok'
+  return 'info'
 }
 
 export default function RecebimentoResumoPage() {
@@ -75,8 +87,9 @@ export default function RecebimentoResumoPage() {
       const res = await rpc<ResumoItem[] | null>('fn_resumo_recebimento', { p_recebimento_id: recebimentoId })
       const lista = Array.isArray(res) ? res : []
 
+      // DIVERGENTE primeiro, depois OK, depois ABERTO
+      const peso = (s: ResumoItem['status_item']) => (s === 'DIVERGENTE' ? 0 : s === 'OK' ? 1 : 2)
       lista.sort((a, b) => {
-        const peso = (s: ResumoItem['status_item']) => (s === 'DIVERGENTE' ? 0 : s === 'OK' ? 1 : 2)
         const pa = peso(a.status_item)
         const pb = peso(b.status_item)
         if (pa !== pb) return pa - pb
@@ -113,27 +126,27 @@ export default function RecebimentoResumoPage() {
 
   if (loading) {
     return (
-      <RetroWindow title="Resumo do recebimento">
-        <div className="text-sm opacity-80">Carregando…</div>
-      </RetroWindow>
+      <Card title="Resumo do recebimento" subtitle="Carregando…">
+        <div className="text-sm text-app-muted">Carregando…</div>
+      </Card>
     )
   }
 
   if (erro) {
     return (
-      <RetroWindow title="Erro">
+      <Card title="Erro" subtitle="Não foi possível carregar o resumo">
         <div className="space-y-3">
-          <div className="text-sm font-bold text-red-700">{erro}</div>
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-            <RetroButton className="w-full py-3" onClick={() => router.back()}>
+          <div className="text-sm font-semibold text-red-600">{erro}</div>
+          <div className="grid grid-cols-1 gap-2">
+            <Button className="w-full py-3" variant="ghost" onClick={() => router.back()}>
               Voltar
-            </RetroButton>
-            <RetroButton className="w-full py-3" onClick={carregar}>
+            </Button>
+            <Button className="w-full py-3" onClick={carregar}>
               Tentar novamente
-            </RetroButton>
+            </Button>
           </div>
         </div>
-      </RetroWindow>
+      </Card>
     )
   }
 
@@ -141,37 +154,34 @@ export default function RecebimentoResumoPage() {
 
   return (
     <div className="space-y-4">
-      <RetroWindow
+      <Card
         title="Resumo — Recebimento"
+        subtitle={`ID: …${shortId(recebimento.id)}${recebimento.referencia ? ` • Ref: ${recebimento.referencia}` : ''}`}
         rightSlot={
           <div className="flex items-center gap-2">
-            <RetroBadge tone={recebimento.status === 'ABERTO' ? 'ok' : 'warn'}>{recebimento.status}</RetroBadge>
-            <RetroBadge tone="info">{recebimento.tipo_conferencia}</RetroBadge>
+            <Badge tone={toneReceb(recebimento.status)}>{recebimento.status}</Badge>
+            <Badge tone="info">{recebimento.tipo_conferencia}</Badge>
           </div>
         }
       >
-        <div className="grid gap-3 md:grid-cols-2 md:items-center">
-          <div className="space-y-1 text-xs opacity-80">
-            <div>
-              ID: …{shortId(recebimento.id)}
-              {recebimento.referencia ? ` • Ref: ${recebimento.referencia}` : ''}
-            </div>
-            <div>Criado: {fmtDateTime(recebimento.criado_em)}</div>
-            <div>Finalizado: {fmtDateTime(recebimento.aprovado_em)}</div>
+        <div className="space-y-2">
+          <div className="text-xs text-app-muted">
+            Criado: <span className="font-semibold text-app-fg">{fmtDateTime(recebimento.criado_em)}</span> • Finalizado:{' '}
+            <span className="font-semibold text-app-fg">{fmtDateTime(recebimento.aprovado_em)}</span>
           </div>
 
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:flex lg:justify-end">
-            <RetroButton className="w-full py-3 lg:w-auto" onClick={() => router.back()}>
+          <div className="grid grid-cols-1 gap-2">
+            <Button className="w-full py-3" variant="ghost" onClick={() => router.back()}>
               Voltar
-            </RetroButton>
-            <RetroButton className="w-full py-3 lg:w-auto" onClick={() => router.push(`/recebimentos/${recebimento.id}`)}>
+            </Button>
+            <Button className="w-full py-3" variant="secondary" onClick={() => router.push(`/recebimentos/${recebimento.id}`)}>
               Entrar no recebimento
-            </RetroButton>
+            </Button>
           </div>
         </div>
-      </RetroWindow>
+      </Card>
 
-      <RetroWindow title="Bipagens">
+      <Card title="Bipagens" subtitle="Estatísticas do recebimento">
         <div className="grid gap-1 text-sm">
           <div>
             <b>Total bipado:</b> {stats?.total_bipado ?? 0}
@@ -186,12 +196,17 @@ export default function RecebimentoResumoPage() {
             <b>Total divergente:</b> {stats?.total_divergente ?? 0}
           </div>
         </div>
-      </RetroWindow>
+      </Card>
 
-      <RetroWindow
-        title="Resumo (modo escala)"
+      <Card
+        title="Resumo"
+        subtitle={isFechado ? 'Recebimento finalizado' : 'Recebimento em andamento'}
         rightSlot={
-          totals.temDivergencia ? <RetroBadge tone="warn">DIVERGÊNCIA</RetroBadge> : <RetroBadge tone="ok">OK</RetroBadge>
+          totals.temDivergencia ? (
+            <Badge tone="warn">DIVERGÊNCIA</Badge>
+          ) : (
+            <Badge tone="ok">OK</Badge>
+          )
         }
       >
         <div className="grid gap-1 text-sm">
@@ -209,43 +224,46 @@ export default function RecebimentoResumoPage() {
           </div>
 
           {!isFechado ? (
-            <div className="mt-2 text-xs opacity-80">
-              Recebimento ainda <b>ABERTO</b>. Se existir divergência, a recomendação operacional é <b>REPROVAR</b>.
+            <div className="mt-2 text-xs text-app-muted">
+              Recebimento ainda <b className="text-app-fg">ABERTO</b>. Se existir divergência, a recomendação operacional é{' '}
+              <b className="text-app-fg">REPROVAR</b>.
             </div>
           ) : null}
         </div>
-      </RetroWindow>
+      </Card>
 
-      <RetroWindow title="Itens por variante">
+      <Card title="Itens por variante" subtitle="Ordenado: divergente → ok → aberto">
         {itens.length === 0 ? (
-          <div className="text-sm opacity-80">Nenhum item ainda.</div>
+          <div className="text-sm text-app-muted">Nenhum item ainda.</div>
         ) : (
           <div className="grid gap-2">
-            {itens.map((x) => {
-              const danger = x.status_item === 'DIVERGENTE' || (Number(x.qtd_divergente) || 0) > 0
-              return (
-                <div
-                  key={x.produto_variante_id}
-                  className={`border-2 border-black bg-white p-3 ${danger ? 'bg-red-50' : ''}`}
-                >
-                  <div className="text-xs font-black">Variante: …{shortId(x.produto_variante_id)}</div>
-                  <div className="mt-1 text-sm">
-                    Status: <b>{x.status_item}</b> • OK: <b>{Number(x.qtd_ok) || 0}</b> • Divergente:{' '}
-                    <b>{Number(x.qtd_divergente) || 0}</b>
+            {itens.map((x) => (
+              <div key={x.produto_variante_id} className="app-card px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-xs text-app-muted">Variante</div>
+                    <div className="text-sm font-semibold text-app-fg">…{shortId(x.produto_variante_id)}</div>
                   </div>
+
+                  <Badge tone={toneItem(x.status_item)}>{x.status_item}</Badge>
                 </div>
-              )
-            })}
+
+                <div className="mt-2 text-sm text-app-muted">
+                  OK: <b className="text-app-fg">{Number(x.qtd_ok) || 0}</b> • Divergente:{' '}
+                  <b className="text-app-fg">{Number(x.qtd_divergente) || 0}</b>
+                </div>
+              </div>
+            ))}
           </div>
         )}
-      </RetroWindow>
+      </Card>
 
       {!isFechado && totals.temDivergencia ? (
-        <RetroWindow title="Atenção" rightSlot={<RetroBadge tone="warn">ação</RetroBadge>}>
-          <div className="text-sm">
+        <Card title="Atenção" subtitle="Ação recomendada" rightSlot={<Badge tone="warn">ação</Badge>}>
+          <div className="text-sm text-app-fg">
             Existe divergência no resumo. Pelo modo escala, o item permanece <b>DIVERGENTE</b>.
           </div>
-        </RetroWindow>
+        </Card>
       ) : null}
     </div>
   )

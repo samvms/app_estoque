@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import { RetroWindow, RetroButton, RetroBadge } from '@/modules/shared/ui/retro'
+import { Card, Button, Badge, StatCard } from '@/modules/shared/ui/app'
 
 type StatusOperacional = {
   contagem_aberta_id: string | null
@@ -38,9 +38,7 @@ export default function DashboardPage() {
     setErr(null)
     setLoading(true)
 
-    const { data, error } = await supabase
-      .schema('app_estoque')
-      .rpc('fn_status_operacional')
+    const { data, error } = await supabase.schema('app_estoque').rpc('fn_status_operacional')
 
     setLoading(false)
     setBootLoading(false)
@@ -50,10 +48,7 @@ export default function DashboardPage() {
       return
     }
 
-    const row = Array.isArray(data)
-      ? (data[0] as StatusOperacional | undefined)
-      : undefined
-
+    const row = Array.isArray(data) ? (data[0] as StatusOperacional | undefined) : undefined
     setStatus(row ?? null)
   }
 
@@ -76,11 +71,9 @@ export default function DashboardPage() {
 
   useEffect(() => {
     carregar()
-
     const onVis = () => {
       if (document.visibilityState === 'visible') carregar()
     }
-
     document.addEventListener('visibilitychange', onVis)
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [])
@@ -90,114 +83,128 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-4">
-      <RetroWindow
+      <Card
         title="Atalhos operacionais"
         subtitle="Acesso rápido às operações"
-        rightSlot={<RetroBadge tone="info">MVP</RetroBadge>}
+        rightSlot={<Badge tone="info">MVP</Badge>}
       >
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <Link href="/contagens" prefetch={false}>
-            <RetroButton className="w-full py-3">Contagens</RetroButton>
+            <Button className="w-full py-3">Contagens</Button>
           </Link>
+
           <Link href="/recebimentos" prefetch={false}>
-            <RetroButton className="w-full py-3">Recebimentos</RetroButton>
+            <Button className="w-full py-3" variant="secondary">
+              Recebimentos
+            </Button>
+          </Link>
+
+          <Link href="/qr/gerar" prefetch={false}>
+            <Button className="w-full py-3" variant="ghost">
+              Gerar QR (lote)
+            </Button>
+          </Link>
+
+          <Link href="/locais" prefetch={false}>
+            <Button className="w-full py-3" variant="ghost">
+              Locais
+            </Button>
           </Link>
         </div>
-      </RetroWindow>
+      </Card>
 
-      <RetroWindow
+      <Card
         title="Status"
         subtitle="Situação operacional atual"
         rightSlot={
           <div className="flex gap-2">
-            <RetroButton onClick={carregar} disabled={loading}>
+            <Button onClick={carregar} disabled={loading} variant="ghost">
               {loading ? 'Atualizando...' : 'Atualizar'}
-            </RetroButton>
-            <RetroButton variant="danger" onClick={logout} disabled={loading}>
+            </Button>
+            <Button onClick={logout} disabled={loading} variant="danger">
               Sair
-            </RetroButton>
+            </Button>
           </div>
         }
       >
-        {err ? (
-          <div className="text-sm font-bold text-red-700">{err}</div>
-        ) : null}
+        {err ? <div className="text-sm font-semibold text-red-600">{err}</div> : null}
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-          <div className="retro-panel">
-            <div className="retro-panel__title">Contagem</div>
-            <div className="mt-2 text-sm">
-              {bootLoading ? (
-                <div className="opacity-80">Carregando...</div>
-              ) : !temContagemAberta ? (
-                <div className="opacity-80">Nenhuma contagem aberta.</div>
-              ) : (
-                <>
-                  <div><b>Status:</b> ABERTA</div>
-                  <div><b>Tipo:</b> {status?.contagem_aberta_tipo}</div>
-                  <div><b>Iniciada:</b> {fmt(status?.contagem_aberta_iniciada_em)}</div>
+          <StatCard title="Contagem">
+            {bootLoading ? (
+              <div className="opacity-70">Carregando...</div>
+            ) : !temContagemAberta ? (
+              <div className="opacity-70">Nenhuma contagem aberta.</div>
+            ) : (
+              <div className="space-y-1">
+                <div>
+                  <b>Status:</b> ABERTA
+                </div>
+                <div>
+                  <b>Tipo:</b> {status?.contagem_aberta_tipo}
+                </div>
+                <div>
+                  <b>Iniciada:</b> {fmt(status?.contagem_aberta_iniciada_em)}
+                </div>
 
-                  <div className="mt-2">
-                    <Link
-                      href={`/contagens/${status!.contagem_aberta_id}`}
-                      prefetch={false}
-                    >
-                      <RetroButton className="w-full py-3">
-                        Entrar
-                      </RetroButton>
-                    </Link>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+                <div className="pt-2">
+                  <Link href={`/contagens/${status!.contagem_aberta_id}`} prefetch={false}>
+                    <Button className="w-full py-3">Entrar</Button>
+                  </Link>
+                </div>
+              </div>
+            )}
+          </StatCard>
 
-          <div className="retro-panel">
-            <div className="retro-panel__title">Recebimento</div>
-            <div className="mt-2 text-sm">
-              {bootLoading ? (
-                <div className="opacity-80">Carregando...</div>
-              ) : !temRecebimentoAberto ? (
-                <div className="opacity-80">Nenhum recebimento aberto.</div>
-              ) : (
-                <>
-                  <div><b>Status:</b> ABERTO</div>
-                  <div><b>Tipo:</b> {status?.recebimento_aberto_tipo}</div>
-                  <div><b>Ref:</b> {status?.recebimento_aberto_referencia || '-'}</div>
-                  <div><b>Criado:</b> {fmt(status?.recebimento_aberto_criado_em)}</div>
+          <StatCard title="Recebimento">
+            {bootLoading ? (
+              <div className="opacity-70">Carregando...</div>
+            ) : !temRecebimentoAberto ? (
+              <div className="opacity-70">Nenhum recebimento aberto.</div>
+            ) : (
+              <div className="space-y-1">
+                <div>
+                  <b>Status:</b> ABERTO
+                </div>
+                <div>
+                  <b>Tipo:</b> {status?.recebimento_aberto_tipo}
+                </div>
+                <div>
+                  <b>Ref:</b> {status?.recebimento_aberto_referencia || '-'}
+                </div>
+                <div>
+                  <b>Criado:</b> {fmt(status?.recebimento_aberto_criado_em)}
+                </div>
 
-                  <div className="mt-2">
-                    <Link
-                      href={`/recebimentos/${status!.recebimento_aberto_id}`}
-                      prefetch={false}
-                    >
-                      <RetroButton className="w-full py-3">
-                        Entrar
-                      </RetroButton>
-                    </Link>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+                <div className="pt-2">
+                  <Link href={`/recebimentos/${status!.recebimento_aberto_id}`} prefetch={false}>
+                    <Button className="w-full py-3" variant="secondary">
+                      Entrar
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            )}
+          </StatCard>
 
-          <div className="retro-panel">
-            <div className="retro-panel__title">Última bipagem</div>
-            <div className="mt-2 text-sm">
-              {bootLoading ? (
-                <div className="opacity-80">Carregando...</div>
-              ) : !status?.ultimo_evento_em ? (
-                <div className="opacity-80">Sem registros ainda.</div>
-              ) : (
-                <>
-                  <div><b>Origem:</b> {status?.ultimo_evento_origem}</div>
-                  <div><b>Quando:</b> {fmt(status?.ultimo_evento_em)}</div>
-                </>
-              )}
-            </div>
-          </div>
+          <StatCard title="Última bipagem">
+            {bootLoading ? (
+              <div className="opacity-70">Carregando...</div>
+            ) : !status?.ultimo_evento_em ? (
+              <div className="opacity-70">Sem registros ainda.</div>
+            ) : (
+              <div className="space-y-1">
+                <div>
+                  <b>Origem:</b> {status?.ultimo_evento_origem}
+                </div>
+                <div>
+                  <b>Quando:</b> {fmt(status?.ultimo_evento_em)}
+                </div>
+              </div>
+            )}
+          </StatCard>
         </div>
-      </RetroWindow>
+      </Card>
     </div>
   )
 }

@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation'
 
 import { supabase } from '@/lib/supabase/client'
 import { ScannerQR } from '@/modules/inventory/ui/ScannerQR'
-import { RetroWindow, RetroButton, RetroField, RetroSelect, RetroBadge } from '@/modules/shared/ui/retro'
+import { Card, Button, Badge } from '@/modules/shared/ui/app'
 
 type Contagem = {
   id: string
@@ -47,6 +47,10 @@ function mapErroOperacional(msg: string) {
   if (m.includes('contagem_invalida') || m.includes('contagem inválida')) return 'Contagem inválida ou já fechada.'
   if (m.includes('local_obrigatorio') || m.includes('local obrigatório')) return 'Local é obrigatório.'
   return msg.length > 90 ? 'Erro ao bipar.' : msg
+}
+
+function toneStatus(status: Contagem['status']): 'info' | 'ok' | 'warn' {
+  return status === 'ABERTA' ? 'info' : 'ok'
 }
 
 export default function ContagemDetalhePage() {
@@ -183,132 +187,139 @@ export default function ContagemDetalhePage() {
 
   if (loading) {
     return (
-      <RetroWindow title="Contagem">
-        <div className="text-sm opacity-80">Carregando…</div>
-      </RetroWindow>
+      <Card title="Contagem" subtitle="Carregando…">
+        <div className="text-sm text-app-muted">Carregando…</div>
+      </Card>
     )
   }
 
   if (erro) {
     return (
-      <RetroWindow title="Erro">
+      <Card title="Erro" subtitle="Não foi possível carregar a contagem">
         <div className="space-y-3">
-          <div className="text-sm font-bold text-red-700">{erro}</div>
+          <div className="text-sm font-semibold text-red-600">{erro}</div>
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-            <RetroButton className="w-full py-3" onClick={() => router.back()} disabled={busy}>
+            <Button className="w-full py-3" variant="ghost" onClick={() => router.back()} disabled={busy}>
               Voltar
-            </RetroButton>
-            <RetroButton className="w-full py-3" onClick={carregar} disabled={busy}>
+            </Button>
+            <Button className="w-full py-3" onClick={carregar} disabled={busy}>
               Tentar novamente
-            </RetroButton>
+            </Button>
           </div>
         </div>
-      </RetroWindow>
+      </Card>
     )
   }
 
   if (!contagem) {
     return (
-      <RetroWindow title="Contagem">
+      <Card title="Contagem" subtitle="Não encontrada">
         <div className="space-y-3">
-          <div className="text-sm">Contagem não encontrada.</div>
-          <RetroButton className="w-full py-3" onClick={() => router.back()} disabled={busy}>
+          <div className="text-sm text-app-muted">Contagem não encontrada.</div>
+          <Button className="w-full py-3" variant="ghost" onClick={() => router.back()} disabled={busy}>
             Voltar
-          </RetroButton>
+          </Button>
         </div>
-      </RetroWindow>
+      </Card>
     )
   }
 
   return (
     <div className="space-y-3">
       {toast ? (
-        <div className="fixed left-3 right-3 top-3 z-50 border-2 border-black bg-white p-3 text-sm font-bold md:left-auto md:right-6 md:top-6 md:w-[420px]">
+        <div className="fixed left-3 right-3 top-3 z-50 app-card px-4 py-3 text-sm font-semibold md:left-auto md:right-6 md:top-6 md:w-[420px]">
           {toast}
         </div>
       ) : null}
 
-      <RetroWindow
+      <Card
         title={`Contagem ${contagem.tipo}`}
-        rightSlot={
-          <RetroBadge tone={contagem.status === 'FECHADA' ? 'warn' : 'ok'}>{contagem.status}</RetroBadge>
-        }
+        subtitle={`ID: …${shortId(contagem.id)} • Iniciada: ${fmtDateTime(contagem.iniciada_em)}${
+          contagem.finalizada_em ? ` • Finalizada: ${fmtDateTime(contagem.finalizada_em)}` : ''
+        }`}
+        rightSlot={<Badge tone={toneStatus(contagem.status)}>{contagem.status}</Badge>}
       >
-        <div className="grid gap-3 md:grid-cols-2 md:items-center">
-          <div className="space-y-1">
-            <div className="text-xs opacity-80">ID: …{shortId(contagem.id)}</div>
-            <div className="text-sm opacity-80">
-              Iniciada: {fmtDateTime(contagem.iniciada_em)} {contagem.finalizada_em ? `• Finalizada: ${fmtDateTime(contagem.finalizada_em)}` : ''}
-            </div>
+        <div className="flex flex-col gap-2 md:flex-row md:justify-between md:items-center">
+          <div className="text-xs text-app-muted">
+            {modoLeitura ? 'Modo leitura' : 'Modo operacional'} • {busy ? 'Processando…' : 'Pronto'}
           </div>
 
           <div className="flex flex-col gap-2 md:flex-row md:justify-end">
-            <RetroButton className="w-full py-3 md:w-auto" onClick={() => router.back()} disabled={busy}>
+            <Button className="w-full py-3 md:w-auto" variant="ghost" onClick={() => router.back()} disabled={busy}>
               Voltar
-            </RetroButton>
+            </Button>
 
             {!modoLeitura ? (
-              <RetroButton
-                variant="danger"
+              <Button
                 className="w-full py-3 md:w-auto"
+                variant="danger"
                 onClick={() => setModalFechar(true)}
                 disabled={busy}
               >
                 Fechar contagem
-              </RetroButton>
+              </Button>
             ) : null}
           </div>
         </div>
-      </RetroWindow>
+      </Card>
 
       {modoLeitura ? (
         <>
-          <RetroWindow title="Resumo">
+          <Card title="Resumo" subtitle="Valores finais da contagem">
             <div className="grid gap-2 text-sm">
-              <div>Estoque antes: <b>{contagem.estoque_antes ?? 0}</b></div>
-              <div>Estoque contado: <b>{contagem.estoque_contado ?? 0}</b></div>
-              <div>Diferença: <b>{contagem.diferenca ?? 0}</b></div>
+              <div>
+                Estoque antes: <b className="text-app-fg">{contagem.estoque_antes ?? 0}</b>
+              </div>
+              <div>
+                Estoque contado: <b className="text-app-fg">{contagem.estoque_contado ?? 0}</b>
+              </div>
+              <div>
+                Diferença: <b className="text-app-fg">{contagem.diferenca ?? 0}</b>
+              </div>
             </div>
-          </RetroWindow>
+          </Card>
 
-          <RetroWindow title="Bipagens">
+          <Card title="Bipagens" subtitle="Indicadores de operação">
             <div className="grid gap-2 text-sm">
-              <div>Total bipado: <b>{stats?.total_bipado ?? 0}</b></div>
-              <div>Último bipado em: <b>{fmtDateTime(stats?.ultimo_bipado_em ?? null)}</b></div>
+              <div>
+                Total bipado: <b className="text-app-fg">{stats?.total_bipado ?? 0}</b>
+              </div>
+              <div>
+                Último bipado em: <b className="text-app-fg">{fmtDateTime(stats?.ultimo_bipado_em ?? null)}</b>
+              </div>
             </div>
-          </RetroWindow>
+          </Card>
         </>
       ) : (
         <>
-          <RetroWindow title="Local de estoque (obrigatório)">
+          <Card title="Local de estoque" subtitle="Obrigatório para bipar">
             <div className="space-y-2">
-              <RetroField label="Local">
-                <RetroSelect
-                  value={localId}
-                  onChange={(e) => setLocalId(e.target.value)}
-                  disabled={busy}
-                  className="py-3"
-                >
-                  <option value="">Selecione…</option>
-                  {locais.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.nome}
-                    </option>
-                  ))}
-                </RetroSelect>
-              </RetroField>
-              {!localId ? <div className="text-xs opacity-80">Selecione um local para bipar.</div> : null}
-            </div>
-          </RetroWindow>
+              <label className="text-sm font-semibold text-app-fg">Local</label>
+              <select
+                value={localId}
+                onChange={(e) => setLocalId(e.target.value)}
+                disabled={busy}
+                className="w-full rounded-xl border border-app-border bg-white px-3 py-3 text-sm font-medium text-app-fg outline-none"
+              >
+                <option value="">Selecione…</option>
+                {locais.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.nome}
+                  </option>
+                ))}
+              </select>
 
-          <RetroWindow
+              {!localId ? <div className="text-xs text-app-muted">Selecione um local para bipar.</div> : null}
+            </div>
+          </Card>
+
+          <Card
             title="Scanner"
-            rightSlot={
-              <RetroBadge tone={busy ? 'warn' : 'info'}>{busy ? 'Processando…' : 'Pronto'}</RetroBadge>
-            }
+            subtitle="Leitura contínua (anti-loop)"
+            rightSlot={<Badge tone={busy ? 'warn' : 'info'}>{busy ? 'Processando…' : 'Pronto'}</Badge>}
           >
             <div className="space-y-3">
-              <div className="relative">
+              <div className="relative overflow-hidden rounded-2xl border border-app-border bg-white">
                 <ScannerQR
                   modo="continuous"
                   cooldownMs={1200}
@@ -318,43 +329,51 @@ export default function ContagemDetalhePage() {
                 />
 
                 {!localId ? (
-                  <div className="absolute inset-0 grid place-items-center border-2 border-dashed border-black bg-white/90 p-4 text-center font-black">
-                    Selecione um local
+                  <div className="absolute inset-0 grid place-items-center bg-white/90 p-4 text-center">
+                    <div className="max-w-[260px]">
+                      <div className="text-sm font-semibold text-app-fg">Selecione um local</div>
+                      <div className="mt-1 text-xs text-app-muted">O scanner fica bloqueado até escolher.</div>
+                    </div>
                   </div>
                 ) : null}
               </div>
 
               <div className="grid gap-1 text-sm">
-                <div><b>Último QR:</b> {ultimoQr ? `…${shortId(ultimoQr, 8)}` : '-'}</div>
-                <div><b>Total bipado:</b> {stats?.total_bipado ?? 0}</div>
-                <div><b>Último:</b> {fmtDateTime(stats?.ultimo_bipado_em ?? null)}</div>
                 <div>
-                  <b>Local atual:</b>{' '}
-                  {localId ? locais.find((l) => l.id === localId)?.nome ?? '-' : '-'}
+                  <b>Último QR:</b> {ultimoQr ? `…${shortId(ultimoQr, 8)}` : '-'}
+                </div>
+                <div>
+                  <b>Total bipado:</b> {stats?.total_bipado ?? 0}
+                </div>
+                <div>
+                  <b>Último:</b> {fmtDateTime(stats?.ultimo_bipado_em ?? null)}
+                </div>
+                <div>
+                  <b>Local atual:</b> {localId ? locais.find((l) => l.id === localId)?.nome ?? '-' : '-'}
                 </div>
               </div>
 
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                <RetroButton className="w-full py-3" onClick={refetchStats} disabled={busy}>
+                <Button className="w-full py-3" variant="ghost" onClick={refetchStats} disabled={busy}>
                   Atualizar total
-                </RetroButton>
-                <RetroButton className="w-full py-3" onClick={carregar} disabled={busy}>
+                </Button>
+                <Button className="w-full py-3" variant="secondary" onClick={carregar} disabled={busy}>
                   Recarregar tela
-                </RetroButton>
+                </Button>
               </div>
             </div>
-          </RetroWindow>
+          </Card>
         </>
       )}
 
       {modalFechar && !modoLeitura ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/35 p-4">
-          <div className="w-full max-w-md border-2 border-black bg-white p-4">
-            <div className="mb-2 text-base font-black">Fechar contagem</div>
+          <div className="w-full max-w-md app-card px-5 py-5">
+            <div className="text-base font-semibold text-app-fg">Fechar contagem</div>
 
-            <div className="space-y-2 text-sm">
-              <div>Ao fechar a contagem:</div>
-              <ul className="list-disc pl-5">
+            <div className="mt-2 space-y-2 text-sm text-app-fg">
+              <div className="text-app-muted">Ao fechar a contagem:</div>
+              <ul className="list-disc pl-5 text-app-fg">
                 <li>Caixas não bipadas serão marcadas como SAÍDA</li>
                 <li>O estoque será recalculado</li>
                 <li>Essa ação não pode ser desfeita</li>
@@ -362,17 +381,12 @@ export default function ContagemDetalhePage() {
             </div>
 
             <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
-              <RetroButton className="w-full py-3" onClick={() => setModalFechar(false)} disabled={busy}>
+              <Button className="w-full py-3" variant="ghost" onClick={() => setModalFechar(false)} disabled={busy}>
                 Cancelar
-              </RetroButton>
-              <RetroButton
-                variant="danger"
-                className="w-full py-3"
-                onClick={fecharContagem}
-                disabled={busy}
-              >
+              </Button>
+              <Button className="w-full py-3" variant="danger" onClick={fecharContagem} disabled={busy}>
                 Confirmar e fechar
-              </RetroButton>
+              </Button>
             </div>
           </div>
         </div>

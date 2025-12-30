@@ -1,9 +1,10 @@
+// src/modules/auth/ui/FormLogin.tsx
 'use client'
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { loginComEmailSenha } from '@/modules/auth'
-import { RetroWindow, RetroButton } from '@/modules/shared/ui/retro'
+import { Card, Button, Badge } from '@/modules/shared/ui/app'
 
 export function FormLogin() {
   const router = useRouter()
@@ -13,9 +14,7 @@ export function FormLogin() {
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
 
-  const disabled = useMemo(() => {
-    return carregando || !email.trim() || !senha
-  }, [carregando, email, senha])
+  const disabled = useMemo(() => carregando || !email.trim() || !senha, [carregando, email, senha])
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -36,62 +35,60 @@ export function FormLogin() {
   }
 
   return (
-    <RetroWindow title="Acesso" subtitle="Entre para continuar">
-      <form onSubmit={onSubmit} className="space-y-3">
-        <div className="space-y-1">
-          <label className="text-sm">E-mail</label>
+    <Card
+      title="Acesso"
+      subtitle="Entre para continuar"
+      rightSlot={<Badge tone="info">Estoque</Badge>}
+    >
+      <form onSubmit={onSubmit} className="space-y-4">
+        <div className="space-y-2">
+          <label className="text-sm font-semibold text-app-fg">E-mail</label>
           <input
-            className="w-full rounded border px-3 py-3 text-base"
+            className="w-full rounded-xl border border-app-border bg-white px-3 py-3 text-base font-medium text-app-fg outline-none"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             type="email"
             autoComplete="email"
             inputMode="email"
             required
+            placeholder="seu@email.com"
           />
         </div>
 
-        <div className="space-y-1">
-          <label className="text-sm">Senha</label>
+        <div className="space-y-2">
+          <label className="text-sm font-semibold text-app-fg">Senha</label>
           <input
-            className="w-full rounded border px-3 py-3 text-base"
+            className="w-full rounded-xl border border-app-border bg-white px-3 py-3 text-base font-medium text-app-fg outline-none"
             value={senha}
             onChange={(e) => setSenha(e.target.value)}
             type="password"
             autoComplete="current-password"
             required
+            placeholder="••••••••"
           />
         </div>
 
-        {erro && (
-          <div className="rounded border p-3 text-sm">
-            <p className="font-semibold">Não foi possível entrar</p>
-            <p className="opacity-80">{erro}</p>
+        {erro ? (
+          <div className="app-card px-4 py-3">
+            <p className="text-sm font-semibold text-red-600">Não foi possível entrar</p>
+            <p className="mt-1 text-sm text-app-muted">{erro}</p>
           </div>
-        )}
+        ) : null}
 
-        <div className="grid gap-2 md:grid-cols-2">
-          <RetroButton type="submit" className="w-full py-3" disabled={disabled}>
-            {carregando ? 'Entrando...' : 'Entrar'}
-          </RetroButton>
+        <div className="grid grid-cols-1 gap-2">
+          <Button type="submit" className="w-full py-3" disabled={disabled}>
+            {carregando ? 'Entrando…' : 'Entrar'}
+          </Button>
 
-          <RetroButton
-            type="button"
-            className="w-full py-3"
-            onClick={() => router.push('/signup')}
-          >
+          <Button type="button" variant="secondary" className="w-full py-3" onClick={() => router.push('/signup')}>
             Criar conta
-          </RetroButton>
-        </div>
+          </Button>
 
-        <RetroButton
-          type="button"
-          className="w-full py-3"
-          onClick={() => router.push('/reset-password')}
-        >
-          Esqueci minha senha
-        </RetroButton>
+          <Button type="button" variant="ghost" className="w-full py-3" onClick={() => router.push('/reset-password')}>
+            Esqueci minha senha
+          </Button>
+        </div>
       </form>
-    </RetroWindow>
+    </Card>
   )
 }

@@ -4,7 +4,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import { RetroWindow, RetroButton, RetroBadge } from '@/modules/shared/ui/retro'
+import { Card, Button, Badge } from '@/modules/shared/ui/app'
 
 type Recebimento = {
   id: string
@@ -23,6 +23,12 @@ function shortId(id: string, n = 8) {
 function fmtDateTime(iso: string | null) {
   if (!iso) return '-'
   return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+}
+
+function toneStatus(status: Recebimento['status']): 'info' | 'ok' | 'warn' {
+  if (status === 'ABERTO') return 'info'
+  if (status === 'APROVADO') return 'ok'
+  return 'warn'
 }
 
 export default function RecebimentosPage() {
@@ -59,153 +65,151 @@ export default function RecebimentosPage() {
 
   const abertos = useMemo(() => recebimentos.filter((r) => r.status === 'ABERTO'), [recebimentos])
   const finalizados = useMemo(() => recebimentos.filter((r) => r.status !== 'ABERTO'), [recebimentos])
-
   const recebimentoAberto = useMemo(() => abertos[0] ?? null, [abertos])
 
   if (loading) {
     return (
-      <RetroWindow title="Recebimentos">
-        <div className="text-sm opacity-80">Carregando…</div>
-      </RetroWindow>
+      <Card title="Recebimentos" subtitle="Carregando…">
+        <div className="text-sm text-app-muted">Carregando…</div>
+      </Card>
     )
   }
 
   if (erro) {
     return (
-      <RetroWindow title="Erro">
+      <Card title="Erro" subtitle="Não foi possível carregar recebimentos">
         <div className="space-y-3">
-          <div className="text-sm font-bold text-red-700">{erro}</div>
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-            <RetroButton className="w-full py-3" onClick={() => router.back()}>
+          <div className="text-sm font-semibold text-red-600">{erro}</div>
+          <div className="grid grid-cols-1 gap-2">
+            <Button className="w-full py-3" variant="ghost" onClick={() => router.back()}>
               Voltar
-            </RetroButton>
-            <RetroButton className="w-full py-3" onClick={carregar}>
+            </Button>
+            <Button className="w-full py-3" onClick={carregar}>
               Tentar novamente
-            </RetroButton>
+            </Button>
           </div>
         </div>
-      </RetroWindow>
+      </Card>
     )
   }
 
   return (
     <div className="space-y-4">
-      <RetroWindow
+      <Card
         title="Recebimentos"
+        subtitle={`Abertos: ${abertos.length} • Finalizados: ${finalizados.length}`}
         rightSlot={
-          <RetroButton onClick={carregar} disabled={loading}>
+          <Button onClick={carregar} disabled={loading} variant="ghost">
             {loading ? 'Atualizando…' : 'Atualizar'}
-          </RetroButton>
+          </Button>
         }
       >
-        <div className="grid gap-3 md:grid-cols-2 md:items-center">
-          <div className="space-y-1">
-            <div className="text-xs opacity-80">
-              Abertos: <b>{abertos.length}</b> • Finalizados: <b>{finalizados.length}</b>
-            </div>
-          </div>
+        <div className="grid grid-cols-1 gap-2">
+          <Button className="w-full py-3" variant="ghost" onClick={() => router.back()}>
+            Voltar
+          </Button>
 
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2 md:justify-end lg:flex lg:justify-end">
-            <RetroButton className="w-full py-3 lg:w-auto" onClick={() => router.back()}>
-              Voltar
-            </RetroButton>
+          <Button className="w-full py-3" onClick={() => router.push('/recebimentos/abrir')}>
+            Criar recebimento
+          </Button>
 
-            <RetroButton className="w-full py-3 lg:w-auto" onClick={() => router.push('/recebimentos/abrir')}>
-              Criar recebimento
-            </RetroButton>
-
-            {recebimentoAberto ? (
-              <RetroButton
-                className="w-full py-3 lg:w-auto"
-                onClick={() => router.push(`/recebimentos/${recebimentoAberto.id}`)}
-                title="Atalho para o recebimento ABERTO"
-              >
-                Entrar no ABERTO
-              </RetroButton>
-            ) : null}
-          </div>
+          {recebimentoAberto ? (
+            <Button
+              className="w-full py-3"
+              variant="secondary"
+              onClick={() => router.push(`/recebimentos/${recebimentoAberto.id}`)}
+              title="Atalho para o recebimento ABERTO"
+            >
+              Entrar no ABERTO
+            </Button>
+          ) : null}
         </div>
-      </RetroWindow>
+      </Card>
 
-      <RetroWindow
-        title="Abertos"
-        rightSlot={<RetroBadge tone="info">{abertos.length} item(ns)</RetroBadge>}
-      >
+      <Card title="Abertos" rightSlot={<Badge tone="info">{abertos.length} item(ns)</Badge>}>
         {abertos.length === 0 ? (
-          <div className="text-sm opacity-80">Nenhum recebimento aberto.</div>
+          <div className="text-sm text-app-muted">Nenhum recebimento aberto.</div>
         ) : (
           <div className="grid gap-3">
             {abertos.map((r) => (
-              <div key={r.id} className="retro-panel">
-                <div className="retro-panel__title">
-                  <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-                    <div className="font-black">
-                      {r.tipo_conferencia}{' '}
-                      <span className="font-normal opacity-80">({r.status})</span>
-                      {r.referencia ? <span className="font-normal opacity-80"> • {r.referencia}</span> : null}
+              <div key={r.id} className="app-card">
+                <div className="flex items-start justify-between gap-3 border-b border-app-border px-4 py-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-sm font-semibold text-app-fg">{r.tipo_conferencia}</div>
+                      <Badge tone={toneStatus(r.status)}>{r.status}</Badge>
+                      {r.referencia ? (
+                        <span className="text-xs text-app-muted">• {r.referencia}</span>
+                      ) : null}
                     </div>
-                    <div className="text-xs opacity-80">ID: …{shortId(r.id)}</div>
+                    <div className="mt-1 text-xs text-app-muted">ID: …{shortId(r.id)}</div>
+                  </div>
+
+                  <div className="text-xs text-app-muted">
+                    Criado:{' '}
+                    <span className="font-semibold text-app-fg">{fmtDateTime(r.criado_em)}</span>
                   </div>
                 </div>
 
-                <div className="mt-2 text-xs opacity-80">Criado em: {fmtDateTime(r.criado_em)}</div>
-
-                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2 lg:flex">
-                  <RetroButton className="w-full py-3 lg:w-auto" onClick={() => router.push(`/recebimentos/${r.id}`)}>
-                    Entrar
-                  </RetroButton>
-
-                  <RetroButton
-                    className="w-full py-3 lg:w-auto"
-                    onClick={() => router.push(`/recebimentos/${r.id}/resumo`)}
-                  >
-                    Ver resumo
-                  </RetroButton>
+                <div className="px-4 py-4">
+                  <div className="grid grid-cols-1 gap-2">
+                    <Button className="w-full py-3" onClick={() => router.push(`/recebimentos/${r.id}`)}>
+                      Entrar
+                    </Button>
+                    <Button className="w-full py-3" variant="ghost" onClick={() => router.push(`/recebimentos/${r.id}/resumo`)}>
+                      Ver resumo
+                    </Button>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
         )}
-      </RetroWindow>
+      </Card>
 
-      <RetroWindow
-        title="Finalizados"
-        rightSlot={<RetroBadge tone="info">{finalizados.length} item(ns)</RetroBadge>}
-      >
+      <Card title="Finalizados" rightSlot={<Badge tone="info">{finalizados.length} item(ns)</Badge>}>
         {finalizados.length === 0 ? (
-          <div className="text-sm opacity-80">Nenhum recebimento finalizado.</div>
+          <div className="text-sm text-app-muted">Nenhum recebimento finalizado.</div>
         ) : (
           <div className="grid gap-3">
             {finalizados.map((r) => (
-              <div key={r.id} className="retro-panel">
-                <div className="retro-panel__title">
-                  <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-                    <div className="font-black">
-                      {r.tipo_conferencia}{' '}
-                      <span className="font-normal opacity-80">({r.status})</span>
-                      {r.referencia ? <span className="font-normal opacity-80"> • {r.referencia}</span> : null}
+              <div key={r.id} className="app-card">
+                <div className="flex items-start justify-between gap-3 border-b border-app-border px-4 py-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-sm font-semibold text-app-fg">{r.tipo_conferencia}</div>
+                      <Badge tone={toneStatus(r.status)}>{r.status}</Badge>
+                      {r.referencia ? (
+                        <span className="text-xs text-app-muted">• {r.referencia}</span>
+                      ) : null}
                     </div>
-                    <div className="text-xs opacity-80">ID: …{shortId(r.id)}</div>
+                    <div className="mt-1 text-xs text-app-muted">ID: …{shortId(r.id)}</div>
+                  </div>
+
+                  <div className="text-xs text-app-muted">
+                    Finalizado:{' '}
+                    <span className="font-semibold text-app-fg">{fmtDateTime(r.aprovado_em)}</span>
                   </div>
                 </div>
 
-                <div className="mt-2 text-xs opacity-80">
-                  Criado: {fmtDateTime(r.criado_em)} • Finalizado: {fmtDateTime(r.aprovado_em)}
-                </div>
+                <div className="px-4 py-4 space-y-1">
+                  <div className="text-xs text-app-muted">
+                    Criado: <span className="font-semibold text-app-fg">{fmtDateTime(r.criado_em)}</span>
+                  </div>
 
-                <div className="mt-3">
-                  <RetroButton
-                    className="w-full py-3 md:w-auto"
+                  <Button
+                    className="w-full py-3"
+                    variant="ghost"
                     onClick={() => router.push(`/recebimentos/${r.id}/resumo`)}
                   >
                     Ver resumo
-                  </RetroButton>
+                  </Button>
                 </div>
               </div>
             ))}
           </div>
         )}
-      </RetroWindow>
+      </Card>
     </div>
   )
 }

@@ -4,7 +4,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import { RetroWindow, RetroButton, RetroBadge } from '@/modules/shared/ui/retro'
+import { Card, Button, Badge } from '@/modules/shared/ui/app'
 
 type Contagem = {
   id: string
@@ -31,6 +31,10 @@ function shortId(id: string, n = 8) {
 function fmtDateTime(iso: string | null) {
   if (!iso) return '-'
   return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+}
+
+function toneStatus(status: Contagem['status']): 'info' | 'ok' | 'warn' {
+  return status === 'ABERTA' ? 'info' : 'ok'
 }
 
 export default function ContagemResumoPage() {
@@ -79,27 +83,27 @@ export default function ContagemResumoPage() {
 
   if (loading) {
     return (
-      <RetroWindow title="Resumo da contagem">
-        <div className="text-sm opacity-80">Carregando…</div>
-      </RetroWindow>
+      <Card title="Resumo da contagem" subtitle="Carregando…">
+        <div className="text-sm text-app-muted">Carregando…</div>
+      </Card>
     )
   }
 
   if (erro) {
     return (
-      <RetroWindow title="Erro">
+      <Card title="Erro" subtitle="Não foi possível carregar o resumo">
         <div className="space-y-3">
-          <div className="text-sm font-bold text-red-700">{erro}</div>
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-            <RetroButton className="w-full py-3" onClick={() => router.back()}>
+          <div className="text-sm font-semibold text-red-600">{erro}</div>
+          <div className="grid grid-cols-1 gap-2">
+            <Button className="w-full py-3" variant="ghost" onClick={() => router.back()}>
               Voltar
-            </RetroButton>
-            <RetroButton className="w-full py-3" onClick={carregar}>
+            </Button>
+            <Button className="w-full py-3" onClick={carregar}>
               Tentar novamente
-            </RetroButton>
+            </Button>
           </div>
         </div>
-      </RetroWindow>
+      </Card>
     )
   }
 
@@ -107,34 +111,29 @@ export default function ContagemResumoPage() {
 
   return (
     <div className="space-y-4">
-      <RetroWindow
+      <Card
         title="Resumo — Contagem"
+        subtitle={`ID: …${shortId(contagem.id)} • Iniciada: ${fmtDateTime(contagem.iniciada_em)}${
+          contagem.finalizada_em ? ` • Finalizada: ${fmtDateTime(contagem.finalizada_em)}` : ''
+        }`}
         rightSlot={
           <div className="flex items-center gap-2">
-            <RetroBadge tone={contagem.status === 'FECHADA' ? 'warn' : 'ok'}>{contagem.status}</RetroBadge>
-            <RetroBadge tone="info">{contagem.tipo}</RetroBadge>
+            <Badge tone={toneStatus(contagem.status)}>{contagem.status}</Badge>
+            <Badge tone="info">{contagem.tipo}</Badge>
           </div>
         }
       >
-        <div className="grid gap-3 md:grid-cols-2 md:items-center">
-          <div className="space-y-1 text-xs opacity-80">
-            <div>ID: …{shortId(contagem.id)}</div>
-            <div>Iniciada: {fmtDateTime(contagem.iniciada_em)}</div>
-            <div>Finalizada: {fmtDateTime(contagem.finalizada_em)}</div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:flex lg:justify-end">
-            <RetroButton className="w-full py-3 lg:w-auto" onClick={() => router.back()}>
-              Voltar
-            </RetroButton>
-            <RetroButton className="w-full py-3 lg:w-auto" onClick={() => router.push(`/contagens/${contagem.id}`)}>
-              Entrar na contagem
-            </RetroButton>
-          </div>
+        <div className="grid grid-cols-1 gap-2">
+          <Button className="w-full py-3" variant="ghost" onClick={() => router.back()}>
+            Voltar
+          </Button>
+          <Button className="w-full py-3" variant="secondary" onClick={() => router.push(`/contagens/${contagem.id}`)}>
+            Entrar na contagem
+          </Button>
         </div>
-      </RetroWindow>
+      </Card>
 
-      <RetroWindow title="Bipagens" rightSlot={<RetroBadge tone="info">distinto</RetroBadge>}>
+      <Card title="Bipagens" subtitle="Contagem distinta">
         <div className="grid gap-1 text-sm">
           <div>
             <b>Total bipado:</b> {stats?.total_bipado ?? 0}
@@ -143,9 +142,9 @@ export default function ContagemResumoPage() {
             <b>Último bipado em:</b> {fmtDateTime(stats?.ultimo_bipado_em ?? null)}
           </div>
         </div>
-      </RetroWindow>
+      </Card>
 
-      <RetroWindow title="Estoque">
+      <Card title="Estoque" subtitle={isFechada ? 'Valores finais' : 'Aguardando fechamento'}>
         <div className="grid gap-1 text-sm">
           <div>
             <b>Antes:</b> {isFechada ? (contagem.estoque_antes ?? 0) : '-'}
@@ -158,12 +157,12 @@ export default function ContagemResumoPage() {
           </div>
 
           {!isFechada ? (
-            <div className="mt-2 text-xs opacity-80">
-              Contagem ainda <b>ABERTA</b>. Esses valores aparecem após o fechamento.
+            <div className="mt-2 text-xs text-app-muted">
+              Contagem ainda <b className="text-app-fg">ABERTA</b>. Esses valores aparecem após o fechamento.
             </div>
           ) : null}
         </div>
-      </RetroWindow>
+      </Card>
     </div>
   )
 }

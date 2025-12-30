@@ -1,9 +1,10 @@
+// src/app/(public)/reset-password/page.tsx
 'use client'
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import { RetroWindow, RetroButton } from '@/modules/shared/ui/retro'
+import { Card, Button, Badge } from '@/modules/shared/ui/app'
 
 export default function ResetPasswordPage() {
   const router = useRouter()
@@ -25,39 +26,48 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-md px-4 py-6">
-      <RetroWindow title="Redefinir senha" subtitle="Você receberá um link por e-mail">
-        <form onSubmit={handleReset} className="space-y-3">
-          <div className="space-y-1">
-            <label className="text-sm">E-mail</label>
-            <input
-              type="email"
-              className="w-full rounded border px-3 py-3 text-base"
-              placeholder="seu@email.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-              required
-            />
-          </div>
+    <div className="min-h-[100dvh] grid place-items-center px-4">
+      <div className="w-full max-w-md">
+        <Card
+          title="Redefinir senha"
+          subtitle="Você receberá um link por e-mail"
+          rightSlot={<Badge tone="info">Acesso</Badge>}
+        >
+          <form onSubmit={handleReset} className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-app-fg">E-mail</label>
+              <input
+                type="email"
+                className="w-full rounded-xl border border-app-border bg-white px-3 py-3 text-base font-medium text-app-fg outline-none"
+                placeholder="seu@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                required
+              />
+              <div className="text-xs text-app-muted">
+                Enviaremos um link para você criar uma nova senha.
+              </div>
+            </div>
 
-          {msg && <div className="rounded border p-3 text-sm">{msg}</div>}
+            {msg ? (
+              <div className="app-card px-4 py-3">
+                <div className="text-sm text-app-fg">{msg}</div>
+              </div>
+            ) : null}
 
-          <div className="grid gap-2 md:grid-cols-2">
-            <RetroButton type="submit" className="w-full py-3" disabled={loading || !email.trim()}>
-              {loading ? 'Enviando...' : 'Enviar link'}
-            </RetroButton>
+            <div className="grid grid-cols-1 gap-2">
+              <Button type="submit" className="w-full py-3" disabled={loading || !email.trim()}>
+                {loading ? 'Enviando…' : 'Enviar link'}
+              </Button>
 
-            <RetroButton
-              type="button"
-              className="w-full py-3"
-              onClick={() => router.push('/login')}
-            >
-              Voltar
-            </RetroButton>
-          </div>
-        </form>
-      </RetroWindow>
+              <Button type="button" variant="ghost" className="w-full py-3" onClick={() => router.push('/login')}>
+                Voltar
+              </Button>
+            </div>
+          </form>
+        </Card>
+      </div>
     </div>
   )
 }
