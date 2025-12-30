@@ -53,10 +53,17 @@ function toneStatus(status: Contagem['status']): 'info' | 'ok' | 'warn' {
   return status === 'ABERTA' ? 'info' : 'ok'
 }
 
+function normalizeParamId(id: unknown): string {
+  if (typeof id === 'string') return id
+  if (Array.isArray(id) && typeof id[0] === 'string') return id[0]
+  return ''
+}
+
 export default function ContagemDetalhePage() {
   const router = useRouter()
-  const params = useParams<{ id: string }>()
-  const contagemId = params?.id
+  const params = useParams()
+
+  const contagemId = useMemo(() => normalizeParamId((params as any)?.id).trim(), [params])
 
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
@@ -87,9 +94,17 @@ export default function ContagemDetalhePage() {
   }, [])
 
   const carregar = useCallback(async () => {
-    if (!contagemId) return
+    // ✅ nunca retorna antes de desligar o loading
     setLoading(true)
     setErro(null)
+
+    if (!contagemId) {
+      setContagem(null)
+      setLocais([])
+      setStats(null)
+      setLoading(false)
+      return
+    }
 
     try {
       const c = await rpc<Contagem[] | null>('fn_obter_contagem', { p_contagem_id: contagemId })
@@ -122,9 +137,13 @@ export default function ContagemDetalhePage() {
   }, [contagemId, rpc])
 
   useEffect(() => {
+    // ✅ evita ficar preso em loading se id vier vazio no primeiro render
+    if (!contagemId) {
+      setLoading(false)
+      return
+    }
     carregar()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contagemId])
+  }, [contagemId, carregar])
 
   const bipar = useCallback(
     async (valor: string) => {
