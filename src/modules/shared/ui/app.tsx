@@ -42,14 +42,12 @@ type Notif = {
   priority: 1 | 2 | 3
 }
 
-// ✅ QR agora é “aba” no sidebar (section própria, no topo da operação)
 const NAV: NavSection[] = [
   {
     title: 'Operação',
     items: [
       { label: 'Home', href: '/home', icon: Home },
       { label: 'QR', href: '/qr', icon: QrCode },
-      { label: 'Scanner (QR)', href: '/qr/scanner', icon: QrCode },
       { label: 'Estoques', href: '/estoques', icon: Boxes },
       { label: 'Contagens', href: '/contagens', icon: ClipboardList },
       { label: 'Recebimentos', href: '/recebimentos', icon: Truck },

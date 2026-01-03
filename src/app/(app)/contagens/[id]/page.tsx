@@ -1,7 +1,6 @@
-// src/app/(app)/contagens/[id]/page.tsx
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 
 import { supabase } from '@/lib/supabase/client'
@@ -20,6 +19,20 @@ type Contagem = {
   diferenca: number | null
 }
 
+type ResumoVariacao = {
+  produto_variante_id: string
+  modelo: string
+  variacao: string
+  total_bipado: number
+}
+
+type UltimoBipado = {
+  bipado_em: string
+  qr_code: string
+  modelo: string
+  variacao: string
+}
+
 type LocalEstoque = {
   id: string
   nome: string
@@ -36,19 +49,6 @@ function shortId(id: string, n = 8) {
   return (id || '').replace(/-/g, '').slice(-n).toUpperCase()
 }
 
-function fmtDateTime(iso: string | null) {
-  if (!iso) return '-'
-  const d = new Date(iso)
-  return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
-}
-
-function mapErroOperacional(msg: string) {
-  const m = (msg || '').toLowerCase()
-  if (m.includes('contagem_invalida') || m.includes('contagem inválida')) return 'Contagem inválida ou já fechada.'
-  if (m.includes('local_obrigatorio') || m.includes('local obrigatório')) return 'Local é obrigatório.'
-  return msg.length > 90 ? 'Erro ao bipar.' : msg
-}
-
 function toneStatus(status: Contagem['status']): 'info' | 'ok' | 'warn' {
   return status === 'ABERTA' ? 'info' : 'ok'
 }
@@ -57,6 +57,13 @@ function normalizeParamId(id: unknown): string {
   if (typeof id === 'string') return id
   if (Array.isArray(id) && typeof id[0] === 'string') return id[0]
   return ''
+}
+
+function mapErroOperacional(msg: string) {
+  const m = (msg || '').toLowerCase()
+  if (m.includes('contagem_invalida') || m.includes('contagem inválida')) return 'Contagem inválida ou já fechada.'
+  if (m.includes('local_obrigatorio') || m.includes('local obrigatório')) return 'Local é obrigatório.'
+  return msg.length > 90 ? 'Erro ao bipar.' : msg
 }
 
 export default function ContagemDetalhePage() {
@@ -75,16 +82,34 @@ export default function ContagemDetalhePage() {
   const [stats, setStats] = useState<ContagemStats | null>(null)
   const [ultimoQr, setUltimoQr] = useState<string>('')
 
+  // Resumos (novo)
+  const [resumoVar, setResumoVar] = useState<ResumoVariacao[]>([])
+  const [ultimos, setUltimos] = useState<UltimoBipado[]>([])
+  const [loadingResumo, setLoadingResumo] = useState(false)
+
+  // toast
   const [toast, setToast] = useState<string | null>(null)
+  const toastTimerRef = useRef<number | null>(null)
+
   const [modalFechar, setModalFechar] = useState(false)
   const [busy, setBusy] = useState(false)
 
-  const modoLeitura = useMemo(() => contagem?.status === 'FECHADA', [contagem?.status])
+  const modoLeitura = contagem?.status === 'FECHADA'
+
+  // formatter (perf)
+  const dtf = useMemo(() => new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }), [])
+  const fmtDateTime = useCallback((iso: string | null) => (iso ? dtf.format(new Date(iso)) : '-'), [dtf])
 
   const showToast = useCallback((msg: string) => {
     setToast(msg)
-    window.clearTimeout((showToast as any)._t)
-    ;(showToast as any)._t = window.setTimeout(() => setToast(null), 2200)
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = window.setTimeout(() => setToast(null), 2200)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current)
+    }
   }, [])
 
   const rpc = useCallback(async <T,>(fn: string, args?: Record<string, any>) => {
@@ -93,8 +118,25 @@ export default function ContagemDetalhePage() {
     return data as T
   }, [])
 
+  // --- Resumo: variação + últimos (novo)
+  const carregarResumoBipagens = useCallback(async () => {
+    if (!contagemId) return
+    setLoadingResumo(true)
+    try {
+      const [a, b] = await Promise.all([
+        rpc<ResumoVariacao[] | null>('fn_contagem_resumo_por_variacao', { p_contagem_id: contagemId }),
+        rpc<UltimoBipado[] | null>('fn_contagem_ultimos_bipados', { p_contagem_id: contagemId, p_limit: 10 }),
+      ])
+      setResumoVar(Array.isArray(a) ? a : [])
+      setUltimos(Array.isArray(b) ? b : [])
+    } catch {
+      // não trava operação
+    } finally {
+      setLoadingResumo(false)
+    }
+  }, [contagemId, rpc])
+
   const carregar = useCallback(async () => {
-    // ✅ nunca retorna antes de desligar o loading
     setLoading(true)
     setErro(null)
 
@@ -102,6 +144,8 @@ export default function ContagemDetalhePage() {
       setContagem(null)
       setLocais([])
       setStats(null)
+      setResumoVar([])
+      setUltimos([])
       setLoading(false)
       return
     }
@@ -112,20 +156,21 @@ export default function ContagemDetalhePage() {
       if (!cont) throw new Error('Contagem não encontrada ou sem permissão.')
       setContagem(cont)
 
-      const ls = await rpc<LocalEstoque[]>('fn_listar_locais')
-      setLocais(ls ?? [])
+      const ls = await rpc<LocalEstoque[] | null>('fn_listar_locais')
+      setLocais(Array.isArray(ls) ? ls : [])
 
       const st = await rpc<ContagemStats[] | null>('fn_contagem_stats', { p_contagem_id: contagemId })
       const st0 = Array.isArray(st) ? st[0] : null
       setStats(st0 ?? { contagem_id: contagemId, total_bipado: 0, ultimo_bipado_em: null })
 
-      if (!localId && (ls?.length ?? 0) === 1) setLocalId(ls[0].id)
+      // ✅ carrega resumos sem travar UX
+      void carregarResumoBipagens()
     } catch (e: any) {
       setErro(e?.message ?? 'Erro ao carregar contagem.')
     } finally {
       setLoading(false)
     }
-  }, [contagemId, localId, rpc])
+  }, [carregarResumoBipagens, contagemId, rpc])
 
   const refetchStats = useCallback(async () => {
     if (!contagemId) return
@@ -137,13 +182,25 @@ export default function ContagemDetalhePage() {
   }, [contagemId, rpc])
 
   useEffect(() => {
-    // ✅ evita ficar preso em loading se id vier vazio no primeiro render
     if (!contagemId) {
       setLoading(false)
       return
     }
     carregar()
   }, [contagemId, carregar])
+
+  // auto-seleciona local se existir só 1
+  useEffect(() => {
+    if (localId) return
+    if (locais.length === 1) setLocalId(locais[0].id)
+  }, [locais, localId])
+
+  const localAtualNome = useMemo(() => {
+    if (!localId) return '-'
+    return locais.find((l) => l.id === localId)?.nome ?? '-'
+  }, [locais, localId])
+
+  const scannerBloqueado = !localId || busy || !!modoLeitura
 
   const bipar = useCallback(
     async (valor: string) => {
@@ -160,14 +217,14 @@ export default function ContagemDetalhePage() {
         return
       }
 
+      const qr = String(valor || '').trim()
+      if (!qr) {
+        showToast('QR inválido.')
+        return
+      }
+
       setBusy(true)
       try {
-        const qr = String(valor || '').trim()
-        if (!qr) {
-          showToast('QR inválido.')
-          return
-        }
-
         await rpc<any>('fn_bipar_na_contagem', {
           p_contagem_id: contagemId,
           p_qr_code: qr,
@@ -175,14 +232,17 @@ export default function ContagemDetalhePage() {
         })
 
         setUltimoQr(qr)
+
+        // ✅ atualiza stats + resumos (em paralelo, sem “otimismo”)
         void refetchStats()
+        void carregarResumoBipagens()
       } catch (e: any) {
         showToast(mapErroOperacional(e?.message ?? 'Erro ao bipar.'))
       } finally {
         setBusy(false)
       }
     },
-    [busy, contagemId, localId, modoLeitura, refetchStats, rpc, showToast]
+    [busy, carregarResumoBipagens, contagemId, localId, modoLeitura, refetchStats, rpc, showToast],
   )
 
   const fecharContagem = useCallback(async () => {
@@ -204,6 +264,7 @@ export default function ContagemDetalhePage() {
     }
   }, [busy, carregar, contagemId, rpc, showToast])
 
+  // ---------- UI estados ----------
   if (loading) {
     return (
       <Card title="Contagem" subtitle="Carregando…">
@@ -245,20 +306,27 @@ export default function ContagemDetalhePage() {
 
   return (
     <div className="space-y-3">
+      {/* Toast */}
       {toast ? (
         <div className="fixed left-3 right-3 top-3 z-50 app-card px-4 py-3 text-sm font-semibold md:left-auto md:right-6 md:top-6 md:w-[420px]">
           {toast}
         </div>
       ) : null}
 
+      {/* Header */}
       <Card
         title={`Contagem ${contagem.tipo}`}
         subtitle={`ID: …${shortId(contagem.id)} • Iniciada: ${fmtDateTime(contagem.iniciada_em)}${
           contagem.finalizada_em ? ` • Finalizada: ${fmtDateTime(contagem.finalizada_em)}` : ''
         }`}
-        rightSlot={<Badge tone={toneStatus(contagem.status)}>{contagem.status}</Badge>}
+        rightSlot={
+          <div className="flex items-center gap-2">
+            <Badge tone={toneStatus(contagem.status)}>{contagem.status}</Badge>
+            <Badge tone="info">{contagem.tipo}</Badge>
+          </div>
+        }
       >
-        <div className="flex flex-col gap-2 md:flex-row md:justify-between md:items-center">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div className="text-xs text-app-muted">
             {modoLeitura ? 'Modo leitura' : 'Modo operacional'} • {busy ? 'Processando…' : 'Pronto'}
           </div>
@@ -282,6 +350,7 @@ export default function ContagemDetalhePage() {
         </div>
       </Card>
 
+      {/* Modo leitura */}
       {modoLeitura ? (
         <>
           <Card title="Resumo" subtitle="Valores finais da contagem">
@@ -311,6 +380,7 @@ export default function ContagemDetalhePage() {
         </>
       ) : (
         <>
+          {/* Local */}
           <Card title="Local de estoque" subtitle="Obrigatório para bipar">
             <div className="space-y-2">
               <label className="text-sm font-semibold text-app-fg">Local</label>
@@ -328,47 +398,67 @@ export default function ContagemDetalhePage() {
                 ))}
               </select>
 
-              {!localId ? <div className="text-xs text-app-muted">Selecione um local para bipar.</div> : null}
+              {!localId ? <div className="text-xs text-app-muted">Selecione um local para liberar o scanner.</div> : null}
             </div>
           </Card>
 
+          {/* Scanner + Painel */}
           <Card
             title="Scanner"
             subtitle="Leitura contínua (anti-loop)"
-            rightSlot={<Badge tone={busy ? 'warn' : 'info'}>{busy ? 'Processando…' : 'Pronto'}</Badge>}
+            rightSlot={
+              <Badge tone={scannerBloqueado ? 'warn' : 'ok'}>{scannerBloqueado ? 'Bloqueado' : 'Ativo'}</Badge>
+            }
           >
             <div className="space-y-3">
               <div className="relative overflow-hidden rounded-2xl border border-app-border bg-white">
                 <ScannerQR
                   modo="continuous"
                   cooldownMs={1200}
-                  aoLer={(valor) => {
-                    void bipar(valor)
-                  }}
+                  disabled={scannerBloqueado}
+                  aoLer={(valor) => void bipar(valor)}
                 />
 
-                {!localId ? (
-                  <div className="absolute inset-0 grid place-items-center bg-white/90 p-4 text-center">
-                    <div className="max-w-[260px]">
-                      <div className="text-sm font-semibold text-app-fg">Selecione um local</div>
-                      <div className="mt-1 text-xs text-app-muted">O scanner fica bloqueado até escolher.</div>
+                {scannerBloqueado ? (
+                  <div className="absolute inset-0 z-10 grid place-items-center bg-white/92 p-5 text-center">
+                    <div className="max-w-[320px]">
+                      {!localId ? (
+                        <>
+                          <div className="text-sm font-semibold text-app-fg">Selecione um local</div>
+                          <div className="mt-1 text-xs text-app-muted">
+                            O scanner só libera após escolher o local (vinculado à bipagem).
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-sm font-semibold text-app-fg">Processando</div>
+                          <div className="mt-1 text-xs text-app-muted">Aguarde para evitar dupla bipagem.</div>
+                        </>
+                      )}
                     </div>
                   </div>
                 ) : null}
               </div>
 
-              <div className="grid gap-1 text-sm">
-                <div>
-                  <b>Último QR:</b> {ultimoQr ? `…${shortId(ultimoQr, 8)}` : '-'}
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
+                <div className="app-card px-4 py-3">
+                  <div className="text-xs text-app-muted font-medium">Último QR</div>
+                  <div className="mt-1 text-sm font-semibold text-app-fg">{ultimoQr ? `…${shortId(ultimoQr)}` : '-'}</div>
                 </div>
-                <div>
-                  <b>Total bipado:</b> {stats?.total_bipado ?? 0}
+
+                <div className="app-card px-4 py-3">
+                  <div className="text-xs text-app-muted font-medium">Total bipado</div>
+                  <div className="mt-1 text-sm font-semibold text-app-fg">{stats?.total_bipado ?? 0}</div>
                 </div>
-                <div>
-                  <b>Último:</b> {fmtDateTime(stats?.ultimo_bipado_em ?? null)}
+
+                <div className="app-card px-4 py-3">
+                  <div className="text-xs text-app-muted font-medium">Último</div>
+                  <div className="mt-1 text-sm font-semibold text-app-fg">{fmtDateTime(stats?.ultimo_bipado_em ?? null)}</div>
                 </div>
-                <div>
-                  <b>Local atual:</b> {localId ? locais.find((l) => l.id === localId)?.nome ?? '-' : '-'}
+
+                <div className="app-card px-4 py-3">
+                  <div className="text-xs text-app-muted font-medium">Local</div>
+                  <div className="mt-1 text-sm font-semibold text-app-fg">{localAtualNome}</div>
                 </div>
               </div>
 
@@ -382,9 +472,80 @@ export default function ContagemDetalhePage() {
               </div>
             </div>
           </Card>
+
+          {/* Resumo por variação (novo) */}
+          <Card
+            title="Resumo por variação"
+            subtitle="O que já foi bipado nesta contagem"
+            rightSlot={<Badge tone={loadingResumo ? 'warn' : 'info'}>{loadingResumo ? 'Atualizando…' : 'Live'}</Badge>}
+          >
+            {resumoVar.length === 0 ? (
+              <div className="text-sm text-app-muted">Ainda não há bipagens.</div>
+            ) : (
+              <div className="space-y-2">
+                {resumoVar.slice(0, 10).map((r) => (
+                  <div
+                    key={r.produto_variante_id}
+                    className="flex items-center justify-between rounded-2xl border border-app-border bg-white px-4 py-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-app-fg truncate">{r.modelo}</div>
+                      <div className="text-xs text-app-muted">Variação: {r.variacao || '-'}</div>
+                    </div>
+                    <div className="text-sm font-extrabold text-app-fg">{r.total_bipado}</div>
+                  </div>
+                ))}
+
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                  <Button
+                    className="w-full py-3"
+                    variant="ghost"
+                    onClick={carregarResumoBipagens}
+                    disabled={busy || loadingResumo}
+                  >
+                    Atualizar resumo
+                  </Button>
+                  <Button
+                    className="w-full py-3"
+                    variant="secondary"
+                    onClick={() => router.push(`/contagens/${contagemId}/resumo`)}
+                    disabled={busy}
+                  >
+                    Ver resumo completo
+                  </Button>
+                </div>
+              </div>
+            )}
+          </Card>
+
+          {/* Últimos bipados (novo) */}
+          <Card title="Últimos bipados" subtitle="Auditoria rápida (últimos 10)">
+            {ultimos.length === 0 ? (
+              <div className="text-sm text-app-muted">Nenhum QR bípado ainda.</div>
+            ) : (
+              <div className="space-y-2">
+                {ultimos.map((u, idx) => (
+                  <div
+                    key={`${u.qr_code}-${idx}`}
+                    className="flex items-start justify-between gap-3 rounded-2xl border border-app-border bg-white px-4 py-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-app-fg truncate">
+                        {u.modelo} • {u.variacao || '-'}
+                      </div>
+                      <div className="mt-0.5 text-xs text-app-muted">
+                        {fmtDateTime(u.bipado_em)} • QR: …{shortId(u.qr_code, 8)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
         </>
       )}
 
+      {/* Modal fechar */}
       {modalFechar && !modoLeitura ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/35 p-4">
           <div className="w-full max-w-md app-card px-5 py-5">

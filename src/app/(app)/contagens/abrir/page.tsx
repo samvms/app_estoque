@@ -1,8 +1,7 @@
-// src/app/(app)/contagens/abrir/page.tsx
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { Card, Button, Badge } from '@/modules/shared/ui/app'
 
@@ -14,6 +13,12 @@ export default function AbrirContagemPage() {
   const [tipo, setTipo] = useState<TipoContagem>('PERIODICA')
   const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+
+  const subtitle = useMemo(() => {
+    return tipo === 'PERIODICA'
+      ? 'Recontagem para atualizar o estoque físico.'
+      : 'Define a base confiável do estoque (primeira contagem).'
+  }, [tipo])
 
   async function abrir() {
     setLoading(true)
@@ -36,19 +41,7 @@ export default function AbrirContagemPage() {
 
   return (
     <div className="space-y-4">
-      <Card
-        title="Abrir contagem"
-        subtitle="Escolha o tipo e inicie a operação"
-        rightSlot={<Badge tone="info">Contagens</Badge>}
-      >
-        <div className="grid grid-cols-1 gap-2">
-          <Button className="w-full py-3" variant="ghost" onClick={() => router.back()} disabled={loading}>
-            Voltar
-          </Button>
-        </div>
-      </Card>
-
-      <Card title="Tipo de contagem" subtitle="Periódica é o padrão operacional">
+      <Card title="Tipo" subtitle={subtitle}>
         <div className="space-y-3">
           <label className="app-card px-4 py-3 flex items-center gap-3 cursor-pointer">
             <input
@@ -61,7 +54,7 @@ export default function AbrirContagemPage() {
             />
             <div className="min-w-0">
               <div className="text-sm font-semibold text-app-fg">Periódica</div>
-              <div className="text-xs text-app-muted">Recontagem para atualizar o estoque físico.</div>
+              <div className="text-xs text-app-muted">Padrão operacional.</div>
             </div>
           </label>
 
@@ -76,7 +69,7 @@ export default function AbrirContagemPage() {
             />
             <div className="min-w-0">
               <div className="text-sm font-semibold text-app-fg">Inicial</div>
-              <div className="text-xs text-app-muted">Define a base confiável do estoque (primeira contagem).</div>
+              <div className="text-xs text-app-muted">Usar apenas na primeira contagem.</div>
             </div>
           </label>
 
@@ -91,9 +84,7 @@ export default function AbrirContagemPage() {
             </div>
           ) : null}
 
-          <div className="text-xs text-app-muted">
-            Observação: local padrão será definido depois (na bipagem).
-          </div>
+          <div className="text-xs text-app-muted">Observação: local padrão será definido na bipagem.</div>
         </div>
       </Card>
     </div>

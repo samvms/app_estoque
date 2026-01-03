@@ -1,7 +1,6 @@
-// src/app/(app)/contagens/[id]/resumo/page.tsx
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { Card, Button, Badge } from '@/modules/shared/ui/app'
@@ -28,11 +27,6 @@ function shortId(id: string, n = 8) {
   return (id || '').replace(/-/g, '').slice(-n).toUpperCase()
 }
 
-function fmtDateTime(iso: string | null) {
-  if (!iso) return '-'
-  return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
-}
-
 function toneStatus(status: Contagem['status']): 'info' | 'ok' | 'warn' {
   return status === 'ABERTA' ? 'info' : 'ok'
 }
@@ -44,9 +38,20 @@ export default function ContagemResumoPage() {
 
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
-
   const [contagem, setContagem] = useState<Contagem | null>(null)
   const [stats, setStats] = useState<ContagemStats | null>(null)
+
+  const dtf = useMemo(() => {
+    return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+  }, [])
+
+  const fmt = useCallback(
+    (iso: string | null) => {
+      if (!iso) return '-'
+      return dtf.format(new Date(iso))
+    },
+    [dtf],
+  )
 
   const rpc = useCallback(async <T,>(fn: string, args?: Record<string, any>) => {
     const { data, error } = await supabase.schema('app_estoque').rpc(fn, args ?? {})
@@ -79,7 +84,7 @@ export default function ContagemResumoPage() {
     carregar()
   }, [carregar])
 
-  const isFechada = useMemo(() => contagem?.status === 'FECHADA', [contagem?.status])
+  const isFechada = contagem?.status === 'FECHADA'
 
   if (loading) {
     return (
@@ -113,8 +118,8 @@ export default function ContagemResumoPage() {
     <div className="space-y-4">
       <Card
         title="Resumo — Contagem"
-        subtitle={`ID: …${shortId(contagem.id)} • Iniciada: ${fmtDateTime(contagem.iniciada_em)}${
-          contagem.finalizada_em ? ` • Finalizada: ${fmtDateTime(contagem.finalizada_em)}` : ''
+        subtitle={`ID: …${shortId(contagem.id)} • Iniciada: ${fmt(contagem.iniciada_em)}${
+          contagem.finalizada_em ? ` • Finalizada: ${fmt(contagem.finalizada_em)}` : ''
         }`}
         rightSlot={
           <div className="flex items-center gap-2">
@@ -123,7 +128,7 @@ export default function ContagemResumoPage() {
           </div>
         }
       >
-        <div className="grid grid-cols-1 gap-2">
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
           <Button className="w-full py-3" variant="ghost" onClick={() => router.back()}>
             Voltar
           </Button>
@@ -133,13 +138,13 @@ export default function ContagemResumoPage() {
         </div>
       </Card>
 
-      <Card title="Bipagens" subtitle="Contagem distinta">
+      <Card title="Bipagens" subtitle="Contagem distinta (idempotente)">
         <div className="grid gap-1 text-sm">
           <div>
             <b>Total bipado:</b> {stats?.total_bipado ?? 0}
           </div>
           <div>
-            <b>Último bipado em:</b> {fmtDateTime(stats?.ultimo_bipado_em ?? null)}
+            <b>Último bipado em:</b> {fmt(stats?.ultimo_bipado_em ?? null)}
           </div>
         </div>
       </Card>
@@ -147,13 +152,13 @@ export default function ContagemResumoPage() {
       <Card title="Estoque" subtitle={isFechada ? 'Valores finais' : 'Aguardando fechamento'}>
         <div className="grid gap-1 text-sm">
           <div>
-            <b>Antes:</b> {isFechada ? (contagem.estoque_antes ?? 0) : '-'}
+            <b>Antes:</b> {isFechada ? contagem.estoque_antes ?? 0 : '-'}
           </div>
           <div>
-            <b>Contado:</b> {isFechada ? (contagem.estoque_contado ?? 0) : '-'}
+            <b>Contado:</b> {isFechada ? contagem.estoque_contado ?? 0 : '-'}
           </div>
           <div>
-            <b>Diferença:</b> {isFechada ? (contagem.diferenca ?? 0) : '-'}
+            <b>Diferença:</b> {isFechada ? contagem.diferenca ?? 0 : '-'}
           </div>
 
           {!isFechada ? (
