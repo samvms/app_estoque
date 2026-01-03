@@ -10,7 +10,7 @@ export default function HomePage() {
         rightSlot={<Badge tone="info">Operação</Badge>}
       >
         <div className="text-sm text-app-muted">
-          Painel operacional (pendências, atalhos e alertas). Próximo passo: ligar em RPCs reais.
+          Painel operacional (pendências, atalhos e alertas).
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
@@ -37,7 +37,7 @@ export default function HomePage() {
 
         <Card title="Integrações" subtitle="ERPs e outros softwares">
           <div className="text-sm text-app-muted">
-            Logs e execução de jobs (base do sininho).
+            Logs e execução de jobs.
           </div>
         </Card>
       </div>

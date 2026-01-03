@@ -1,3 +1,4 @@
+// src/modules/shared/ui/app.tsx
 'use client'
 
 import React, { ReactNode, useEffect, useMemo, useState } from 'react'
@@ -123,7 +124,7 @@ function useMockNotifications(): Notif[] {
       title: 'Recebimento ABERTO há 2 dias',
       detail: 'Verificar divergências e finalizar.',
       href: '/recebimentos',
-      createdAt: new Date().toISOString(),
+      createdAt: '2026-01-01T00:00:00.000Z', // ✅ fixo (sem Date)
       priority: 1,
     },
     {
@@ -132,31 +133,39 @@ function useMockNotifications(): Notif[] {
       title: 'Job de integração atrasado',
       detail: 'Última execução há 6h.',
       href: '/integracoes/logs',
-      createdAt: new Date().toISOString(),
+      createdAt: '2026-01-01T00:00:00.000Z', // ✅ fixo (sem Date)
       priority: 2,
     },
   ]
 }
 
-/**
- * ✅ Header “glass” (sticky, blur) e sem botões “Home” no header.
- * ✅ QR como aba do sidebar (já feito em NAV).
- * ✅ Mantém sidebar collapsed + drawer mobile + notificações.
- */
-export function AppShell(props: { title?: string; children: ReactNode; rightSlot?: ReactNode }) {
+
+export function AppShell(props: {
+  /** Wordmark (desktop header + sidebar expandido) */
+  brand?: ReactNode
+  /** Ícone (sidebar colapsado + mobile header) */
+  brandIcon?: ReactNode
+  children: ReactNode
+  rightSlot?: ReactNode
+}) {
   const pathname = usePathname()
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [sidebarOpenMobile, setSidebarOpenMobile] = useState(false)
-
   const [notifOpen, setNotifOpen] = useState(false)
 
   const notifs = useMockNotifications()
-
   const notifCount = useMemo(() => notifs.filter((n) => n.priority <= 2).length, [notifs])
 
   const currentLabel = labelFromPath(pathname)
-  const title = props.title ?? 'App'
+
+  const brand = props.brand ?? <span className="text-sm font-extrabold tracking-tight">App</span>
+
+  // ✅ Default: usa favicon (transparente) para colapsado/mobile
+  const brandIcon =
+    props.brandIcon ?? (
+      <img src="/brand/favicon/lws-48.png" alt="LWS" className="block w-9 h-9" draggable={false} />
+    )
 
   useEffect(() => {
     try {
@@ -175,27 +184,82 @@ export function AppShell(props: { title?: string; children: ReactNode; rightSlot
     setSidebarOpenMobile(false)
   }, [pathname])
 
+  useEffect(() => {
+  const open = sidebarOpenMobile || notifOpen
+  const html = document.documentElement
+  const body = document.body
+
+  if (open) {
+    html.classList.add('lws-scroll-lock')
+    body.classList.add('lws-scroll-lock')
+  } else {
+    html.classList.remove('lws-scroll-lock')
+    body.classList.remove('lws-scroll-lock')
+  }
+
+  return () => {
+    html.classList.remove('lws-scroll-lock')
+    body.classList.remove('lws-scroll-lock')
+  }
+}, [sidebarOpenMobile, notifOpen])
+
+
   return (
     <div className="lws-shell">
       <div className="flex">
         {/* Sidebar desktop */}
         <aside
-          className={cx('lws-sidebar hidden md:flex flex-col', sidebarCollapsed ? 'w-[68px]' : 'w-[248px]')}
+          className={cx(
+            'lws-sidebar hidden md:flex flex-col',
+            // ✅ um pouco mais largo no colapsado para ficar premium + dar respiro no ícone
+            sidebarCollapsed ? 'w-[76px]' : 'w-[248px]'
+          )}
+          style={{ minHeight: 0 }}
         >
-          <div className="px-3 py-3 flex items-center justify-between">
-            <button
-              className="app-btn app-btn--ghost !px-2 !py-2 !border-0"
-              style={{ background: 'transparent' }}
-              onClick={() => setSidebarCollapsed((s) => !s)}
-              title={sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'}
-            >
-              <ChevronLeft className={sidebarCollapsed ? 'rotate-180' : ''} size={18} />
-            </button>
+          {/* Top area */}
+          <div className={cx('px-3 py-3 flex items-center', sidebarCollapsed ? 'justify-center' : 'justify-between')}>
+            {/* Brand area */}
+            {sidebarCollapsed ? (
+              <div
+                className="flex items-center justify-center rounded-2xl"
+                style={{
+                  width: 44,
+                  height: 44,
+                  background: 'rgba(15,76,92,.08)',
+                }}
+                title="Moura LWS"
+              >
+                <div className="[&_img]:bg-transparent [&_img]:block">{brandIcon}</div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="min-w-0 [&_img]:block [&_img]:bg-transparent">{brand}</div>
+              </div>
+            )}
 
-            {!sidebarCollapsed && <div className="text-sm font-extrabold tracking-tight">{title}</div>}
+            {/* Collapse/Expand */}
+            {!sidebarCollapsed ? (
+              <button
+                className="app-btn app-btn--ghost !px-2 !py-2 !border-0"
+                style={{ background: 'transparent' }}
+                onClick={() => setSidebarCollapsed(true)}
+                title="Recolher menu"
+              >
+                <ChevronLeft size={18} />
+              </button>
+            ) : (
+              <button
+                className="app-btn app-btn--ghost !px-2 !py-2 !border-0 mt-2"
+                style={{ background: 'transparent' }}
+                onClick={() => setSidebarCollapsed(false)}
+                title="Expandir menu"
+              >
+                <ChevronLeft className="rotate-180" size={18} />
+              </button>
+            )}
           </div>
 
-          <nav className="lws-sidebar-scroll px-2 pb-3">
+          <nav className="lws-sidebar-scroll px-2 pb-3" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
             {NAV.map((sec) => (
               <div key={sec.title} className="mb-3">
                 {!sidebarCollapsed && <div className="lws-section-title">{sec.title}</div>}
@@ -224,16 +288,52 @@ export function AppShell(props: { title?: string; children: ReactNode; rightSlot
         {/* Sidebar mobile (drawer) */}
         {sidebarOpenMobile && (
           <>
-            <div className="lws-drawer-backdrop md:hidden" onClick={() => setSidebarOpenMobile(false)} />
-            <aside className="fixed left-0 top-0 h-full w-[280px] z-[70] lws-sidebar md:hidden">
-              <div className="px-3 py-3 flex items-center justify-between">
-                <div className="text-sm font-extrabold tracking-tight">{title}</div>
+            {/* backdrop acima do header pra bloquear clique no sininho */}
+            <div
+              className="fixed inset-0 md:hidden"
+              style={{ background: 'rgba(11,18,32,.35)', zIndex: 75 }}
+              onClick={() => setSidebarOpenMobile(false)}
+            />
+
+            <aside
+              className="fixed left-0 top-0 md:hidden flex flex-col"
+              style={{
+                width: 280,
+                height: '100dvh',
+                zIndex: 80,
+                background: 'rgba(255,255,255,.72)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                borderRight: '1px solid var(--app-border)',
+                minHeight: 0,
+              }}
+            >
+              {/* header do drawer */}
+              <div className="px-3 py-3 flex items-center justify-between gap-2 shrink-0">
+                <div className="flex items-center min-w-0 gap-2">
+                  <div className="[&_img]:bg-transparent shrink-0">{brandIcon}</div>
+                  <div className="min-w-0 [&_img]:block [&_img]:bg-transparent">{brand}</div>
+                </div>
+
                 <button className="app-btn app-btn--ghost !px-2 !py-2" onClick={() => setSidebarOpenMobile(false)}>
                   <X size={18} />
                 </button>
               </div>
 
-              <nav className="lws-sidebar-scroll px-2 pb-3">
+              {/* ✅ scroll 100% garantido no mobile */}
+              <nav
+                className="lws-sidebar-scroll px-2 pb-3"
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  overflowY: 'auto',
+                  WebkitOverflowScrolling: 'touch',
+                  paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)',
+                  overscrollBehavior: 'contain',
+                  touchAction: 'pan-y',
+
+                }}
+              >
                 {NAV.map((sec) => (
                   <div key={sec.title} className="mb-3">
                     <div className="lws-section-title">{sec.title}</div>
@@ -258,10 +358,10 @@ export function AppShell(props: { title?: string; children: ReactNode; rightSlot
 
         {/* Main */}
         <div className="flex-1 min-w-0">
-          {/* ✅ Glass Header */}
+          {/* Glass Header */}
           <header className="lws-header-glass">
             <div className="h-full px-3 md:px-5 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3 min-w-0">
                 <button
                   className="app-btn app-btn--ghost !px-2 !py-2 md:hidden"
                   onClick={() => setSidebarOpenMobile(true)}
@@ -270,9 +370,13 @@ export function AppShell(props: { title?: string; children: ReactNode; rightSlot
                   <Menu size={18} />
                 </button>
 
-                <div className="flex flex-col leading-tight">
-                  <div className="text-[12px] text-app-muted font-extrabold">SmartWay</div>
-                  <div className="text-[14px] font-extrabold tracking-tight">{currentLabel}</div>
+                {/* Mobile: icon | Desktop: wordmark */}
+                <div className="md:hidden shrink-0 [&_img]:bg-transparent">{brandIcon}</div>
+                <div className="hidden md:block shrink-0 [&_img]:bg-transparent">{brand}</div>
+
+                <div className="flex flex-col leading-tight min-w-0">
+                  <div className="text-[12px] text-app-muted font-extrabold">Smartway</div>
+                  <div className="text-[14px] font-extrabold tracking-tight truncate">{currentLabel}</div>
                 </div>
               </div>
 
@@ -288,11 +392,7 @@ export function AppShell(props: { title?: string; children: ReactNode; rightSlot
               <div className="flex items-center gap-2">
                 {props.rightSlot ? <div className="hidden md:flex items-center gap-2">{props.rightSlot}</div> : null}
 
-                <button
-                  className="app-btn app-btn--ghost !px-2 !py-2 relative"
-                  onClick={() => setNotifOpen(true)}
-                  title="Notificações"
-                >
+                <button className="app-btn app-btn--ghost !px-2 !py-2 relative" onClick={() => setNotifOpen(true)} title="Notificações">
                   <Bell size={18} />
                   {notifCount > 0 && (
                     <span
@@ -382,7 +482,7 @@ export function AppShell(props: { title?: string; children: ReactNode; rightSlot
   )
 }
 
-/** ✅ Card/Buttons/Badge/StatCard mantidos */
+/** Card/Buttons/Badge/StatCard */
 export function Card(props: { title?: string; subtitle?: string; rightSlot?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
     <section className={cx('app-card', props.className)}>
@@ -427,21 +527,9 @@ export function Button(
   )
 }
 
-
 export function Badge(props: { children: React.ReactNode; tone?: 'info' | 'ok' | 'warn' }) {
   const tone = props.tone ?? 'info'
-  return (
-    <span
-      className={cx(
-        'app-badge',
-        tone === 'info' && 'app-badge--info',
-        tone === 'ok' && 'app-badge--ok',
-        tone === 'warn' && 'app-badge--warn'
-      )}
-    >
-      {props.children}
-    </span>
-  )
+  return <span className={cx('app-badge', tone === 'info' && 'app-badge--info', tone === 'ok' && 'app-badge--ok', tone === 'warn' && 'app-badge--warn')}>{props.children}</span>
 }
 
 export function StatCard(props: { title: string; children: React.ReactNode; className?: string }) {

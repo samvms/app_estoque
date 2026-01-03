@@ -35,6 +35,39 @@ html, body {
   color: var(--app-fg);
 }
 
+/* PWA UX hardening */
+html, body {
+  height: 100%;
+}
+
+/* Evita “bounce” e scroll estranho (principalmente em touch) */
+html {
+  overscroll-behavior: none;
+}
+
+/* Melhor toque/seleção */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  -webkit-tap-highlight-color: transparent;
+  text-rendering: optimizeLegibility;
+
+  /* Evita layout quebrando em PWA com barras do sistema */
+  min-height: 100dvh;
+}
+
+/* Imagens/inputs mais estáveis no iOS */
+input, textarea, button, select {
+  font: inherit;
+}
+
+/* Evita “duplo toque zoom” em botões (sem travar acessibilidade geral) */
+button, a {
+  touch-action: manipulation;
+}
+
+
 body{
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Helvetica Neue", Helvetica, "Apple Color Emoji","Segoe UI Emoji";
 }
@@ -181,10 +214,14 @@ body{
 }
 
 
-.lws-sidebar{
-  height: 100vh;
+lws-sidebar{
+  height: 100dvh;         
   position: sticky;
   top: 0;
+
+  display: flex;           
+  flex-direction: column;
+  min-height: 0;  
 
   background: rgba(255,255,255,.72);
   backdrop-filter: blur(12px);
@@ -196,15 +233,14 @@ body{
 .lws-sidebar-scroll{
   overflow-y: auto;
   flex: 1;
+  min-height: 0;      
   padding-bottom: 12px;
-  scrollbar-width: thin;                 /* Firefox */
+
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin; 
   scrollbar-color: rgba(11,18,32,.18) transparent;
 }
 
-/* Webkit (Chrome/Edge/Safari) */
-.lws-sidebar-scroll::-webkit-scrollbar{
-  width: 8px;
-}
 .lws-sidebar-scroll::-webkit-scrollbar-track{
   background: transparent;
 }
@@ -324,4 +360,11 @@ body{
   -webkit-backdrop-filter: blur(14px);
   background: rgba(255,255,255,.72);
   border-bottom: 1px solid var(--app-border);
+}
+
+
+
+html.lws-scroll-lock,
+body.lws-scroll-lock{
+  overflow: hidden !important;
 }
