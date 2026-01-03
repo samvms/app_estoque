@@ -152,3 +152,176 @@ body{
   background: #fff;
   padding: 12px;
 }
+
+
+:root{
+  /* Shell (Header/Sidebar) */
+  --app-shell: #0A2F38; /* mais escuro que o primary, fica premium */
+  --app-shell-fg: rgba(255,255,255,.92);
+  --app-shell-muted: rgba(255,255,255,.72);
+  --app-shell-border: rgba(255,255,255,.10);
+}
+
+.lws-shell{
+  min-height: 100vh;
+  background: var(--app-bg);
+}
+
+.lws-header{
+  position: sticky;  /* garante que ocupa espaço e não sobrepõe */
+  top: 0;
+  z-index: 40;
+  height: 60px;
+
+  /* mais sólido (Apple-like) */
+  background: rgba(243,246,248,.92); /* usa teu --app-bg */
+  backdrop-filter: blur(12px);
+
+  border-bottom: 1px solid var(--app-border);
+}
+
+
+.lws-sidebar{
+  height: 100vh;
+  position: sticky;
+  top: 0;
+
+  background: rgba(255,255,255,.72);
+  backdrop-filter: blur(12px);
+  color: var(--app-fg);
+
+  border-right: 1px solid var(--app-border);
+}
+
+.lws-sidebar-scroll{
+  overflow-y: auto;
+  flex: 1;
+  padding-bottom: 12px;
+  scrollbar-width: thin;                 /* Firefox */
+  scrollbar-color: rgba(11,18,32,.18) transparent;
+}
+
+/* Webkit (Chrome/Edge/Safari) */
+.lws-sidebar-scroll::-webkit-scrollbar{
+  width: 8px;
+}
+.lws-sidebar-scroll::-webkit-scrollbar-track{
+  background: transparent;
+}
+
+.lws-sidebar-scroll::-webkit-scrollbar-thumb{
+  background: rgba(11,18,32,.16);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.lws-sidebar-scroll::-webkit-scrollbar-thumb:hover{
+  background: rgba(11,18,32,.22);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.lws-nav-item{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+
+  color: rgba(11,18,32,.78);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.lws-nav-item:hover{
+  background: rgba(11,18,32,.035);
+  color: var(--app-fg);
+}
+
+.lws-nav-item--active{
+  background: rgba(15,76,92,.10);
+  color: var(--app-primary);
+  outline: 1px solid rgba(15,76,92,.14);
+}
+
+.lws-section-title{
+  margin: 14px 12px 6px;
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: rgba(11,18,32,.45);
+  font-weight: 800;
+}
+
+.lws-drawer-backdrop{
+  position: fixed;
+  inset: 0;
+  background: rgba(11,18,32,.35);
+  z-index: 60;
+}
+
+.lws-drawer{
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: min(420px, 92vw);
+  z-index: 70;
+  background: #fff;
+  border-left: 1px solid var(--app-border);
+  box-shadow: 0 18px 60px rgba(11,18,32,.20);
+}
+
+
+/* Drawer Apple-like (glass) */
+.lws-drawer{
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: min(420px, 92vw);
+  z-index: 70;
+
+  background: rgba(255,255,255,.78);
+  backdrop-filter: blur(16px);
+
+  border-left: 1px solid var(--app-border);
+  box-shadow: 0 18px 60px rgba(11,18,32,.18);
+}
+
+.lws-drawer-head{
+  border-bottom: 1px solid var(--app-border);
+}
+
+.lws-drawer-scroll{
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(11,18,32,.18) transparent;
+}
+
+.lws-drawer-scroll::-webkit-scrollbar{ width: 6px; }
+.lws-drawer-scroll::-webkit-scrollbar-track{ background: transparent; }
+.lws-drawer-scroll::-webkit-scrollbar-thumb{
+  background: rgba(11,18,32,.16);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.lws-drawer-scroll::-webkit-scrollbar-thumb:hover{
+  background: rgba(11,18,32,.22);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+/* globals.css (adicionar) */
+/* Header glass: sticky + blur + borda suave */
+.lws-header-glass{
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  height: 60px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  background: rgba(255,255,255,.72);
+  border-bottom: 1px solid var(--app-border);
+}

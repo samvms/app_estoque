@@ -1,209 +1,221 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase/client'
-import { Card, Button, Badge, StatCard } from '@/modules/shared/ui/app'
+import { Card, Button, Badge } from '@/modules/shared/ui/app'
 
-type Local = { id: string; nome: string; ativo: boolean }
+const LIMIT = 50
+const TZ = 'America/Sao_Paulo'
+
+function fmtBR(iso: string | null) {
+  if (!iso) return '-'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return String(iso)
+  return new Intl.DateTimeFormat('pt-BR', {
+    timeZone: TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(d)
+}
+
+type Row = {
+  id: string
+  nome: string
+  ativo: boolean
+  next_cursor_nome: string | null
+  next_cursor_id: string | null
+}
 
 export default function LocaisPage() {
-  const router = useRouter()
+  const [nomePrefix, setNomePrefix] = useState('')
+  const [ativo, setAtivo] = useState<'TODOS' | 'ATIVO' | 'INATIVO'>('TODOS')
 
-  const [locais, setLocais] = useState<Local[]>([])
-  const [nome, setNome] = useState('')
+  const [novoNome, setNovoNome] = useState('')
+  const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(false)
-  const [bootLoading, setBootLoading] = useState(true)
+  const [busyId, setBusyId] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
-  const [info, setInfo] = useState<string | null>(null)
 
-  const ativos = useMemo(() => locais.filter(l => l.ativo), [locais])
-  const inativos = useMemo(() => locais.filter(l => !l.ativo), [locais])
+  const [cursorNome, setCursorNome] = useState<string | null>(null)
+  const [cursorId, setCursorId] = useState<string | null>(null)
+  const [hasMore, setHasMore] = useState(true)
 
-  function mapErro(msg: string) {
-    if (msg.includes('nome_obrigatorio')) return 'Nome é obrigatório.'
-    if (msg.includes('local_invalido')) return 'Local inválido.'
-    return msg
-  }
+  const ativoParam = ativo === 'TODOS' ? null : ativo === 'ATIVO'
 
-  async function carregar() {
-    setErr(null)
-    setInfo(null)
+  async function fetchPage(reset: boolean) {
+    if (loading) return
     setLoading(true)
-
-    const { data, error } = await supabase.schema('app_estoque').rpc('fn_listar_locais')
-
-    setLoading(false)
-    setBootLoading(false)
-
-    if (error) {
-      setErr(error.message)
-      return
-    }
-
-    const list = (data ?? []) as any as Local[]
-    setLocais(list)
-
-    if (list.length === 0) setInfo('Nenhum local cadastrado.')
-  }
-
-  useEffect(() => {
-    carregar()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  async function criar() {
     setErr(null)
-    setInfo(null)
 
-    const nomeOk = nome.trim()
-    if (!nomeOk) {
-      setErr('Nome é obrigatório.')
-      return
-    }
-
-    setLoading(true)
     try {
-      const { error } = await supabase.schema('app_estoque').rpc('fn_criar_local', { p_nome: nomeOk })
-      if (error) throw error
+      const { data, error } = await supabase
+        .schema('app_estoque')
+        .rpc('fn_listar_locais_paginado', {
+          p_limit: LIMIT,
+          p_nome_prefix: nomePrefix.trim() || null,
+          p_ativo: ativoParam,
+          p_cursor_nome: reset ? null : cursorNome,
+          p_cursor_id: reset ? null : cursorId,
+        })
 
-      setNome('')
-      await carregar()
+      if (error) throw error
+      const list = (data ?? []) as Row[]
+      setRows((prev) => (reset ? list : prev.concat(list)))
+
+      const last = list.length ? list[list.length - 1] : null
+      setCursorNome(last?.next_cursor_nome ?? null)
+      setCursorId(last?.next_cursor_id ?? null)
+      setHasMore(Boolean(last?.next_cursor_nome && last?.next_cursor_id && list.length === LIMIT))
     } catch (e: any) {
-      setErr(mapErro(e?.message ?? 'erro_inesperado'))
+      setErr(e?.message ?? 'Erro ao carregar.')
     } finally {
       setLoading(false)
     }
   }
 
-  async function setAtivo(localId: string, ativo: boolean) {
-    setErr(null)
-    setLoading(true)
+  function aplicar() {
+    setCursorNome(null); setCursorId(null); setHasMore(true)
+    fetchPage(true)
+  }
+
+  function limpar() {
+    setNomePrefix('')
+    setAtivo('TODOS')
+    setCursorNome(null); setCursorId(null); setHasMore(true)
+    fetchPage(true)
+  }
+
+  async function criarLocal() {
+    const nome = novoNome.trim()
+    if (!nome) return
+    setLoading(true); setErr(null)
+
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .schema('app_estoque')
-        .rpc('fn_definir_local_ativo', { p_local_id: localId, p_ativo: ativo })
+        .rpc('fn_criar_local', { p_nome: nome })
 
       if (error) throw error
-      await carregar()
+      setNovoNome('')
+      await fetchPage(true)
+      return data
     } catch (e: any) {
-      setErr(mapErro(e?.message ?? 'erro_inesperado'))
+      setErr(e?.message ?? 'Erro ao criar local.')
+    } finally {
       setLoading(false)
     }
   }
+
+  async function toggle(id: string, novoAtivo: boolean) {
+    if (busyId) return
+    setBusyId(id); setErr(null)
+
+    try {
+      const { error } = await supabase
+        .schema('app_estoque')
+        .rpc('fn_toggle_local', { p_local_id: id, p_ativo: novoAtivo })
+
+      if (error) throw error
+      setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ativo: novoAtivo } : r)))
+    } catch (e: any) {
+      setErr(e?.message ?? 'Erro ao atualizar.')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  useEffect(() => { fetchPage(true) }, [])
 
   return (
     <div className="space-y-4">
       <Card
         title="Locais"
-        subtitle="Criar, ativar e desativar locais"
-        rightSlot={
-            <div className="flex gap-2">
-            <Button onClick={carregar} variant="ghost">
-                Atualizar
-            </Button>
-            <Button onClick={() => router.push('/qr')} variant="secondary">
-                QR
-            </Button>
-            <Button onClick={() => router.push('/dashboard')} variant="secondary">
-                Dashboard
-            </Button>
-            </div>
-        }
-    >
+        subtitle="Gestão de locais usados na operação"
+        rightSlot={<Badge tone="info">Operação</Badge>}
+      >
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+          <input
+            value={nomePrefix}
+            onChange={(e) => setNomePrefix(e.target.value)}
+            placeholder="Nome (prefixo)"
+            className="app-card px-3 py-2 text-sm outline-none"
+          />
 
-        {err ? <div className="text-sm font-semibold text-red-600">{err}</div> : null}
-        {info ? <div className="text-sm font-semibold text-slate-600">{info}</div> : null}
+          <select
+            value={ativo}
+            onChange={(e) => setAtivo(e.target.value as any)}
+            className="app-card px-3 py-2 text-sm outline-none"
+          >
+            <option value="TODOS">Status: todos</option>
+            <option value="ATIVO">Ativo</option>
+            <option value="INATIVO">Inativo</option>
+          </select>
 
-        {bootLoading ? (
-          <div className="opacity-70">Carregando...</div>
-        ) : (
-          <div className="space-y-3">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <StatCard title="Ativos">{ativos.length}</StatCard>
-              <StatCard title="Inativos">{inativos.length}</StatCard>
-              <StatCard title="Total">{locais.length}</StatCard>
-            </div>
-
-            <div className="rounded-2xl border bg-white p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-base font-semibold">Novo local</div>
-                  <div className="mt-1 text-sm text-slate-600">Ex.: Galpão A</div>
-                </div>
-                <Badge tone="info">MVP</Badge>
-              </div>
-
-              <div className="mt-3 flex flex-col gap-2 md:flex-row">
-                <input
-                  className="flex-1 rounded-2xl border bg-white px-3 py-3 text-sm"
-                  value={nome}
-                  onChange={(e) => setNome(e.target.value)}
-                  placeholder="Nome do local"
-                />
-                <Button onClick={criar} disabled={loading} className="py-3 md:w-40">
-                  {loading ? 'Criando...' : 'Criar'}
-                </Button>
-              </div>
-            </div>
+          <div className="flex gap-2">
+            <Button variant="primary" onClick={aplicar} disabled={loading}>Aplicar</Button>
+            <Button variant="ghost" onClick={limpar} disabled={loading}>Limpar</Button>
           </div>
-        )}
+        </div>
+
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-[1fr,auto] gap-2">
+          <input
+            value={novoNome}
+            onChange={(e) => setNovoNome(e.target.value)}
+            placeholder="Novo local…"
+            className="app-card px-3 py-2 text-sm outline-none"
+          />
+          <Button variant="secondary" onClick={criarLocal} disabled={loading || !novoNome.trim()}>
+            Criar
+          </Button>
+        </div>
+
+        {err ? <div className="mt-3 text-sm" style={{ color: 'var(--app-danger)' }}>{err}</div> : null}
       </Card>
 
       <Card
-        title="Ativos"
-        subtitle="Locais disponíveis para bipagem"
-        rightSlot={<Badge tone="info">{ativos.length}</Badge>}
+        title="Listagem"
+        subtitle={`${rows.length} itens`}
+        rightSlot={<Badge tone={loading ? 'warn' : 'ok'}>{loading ? 'Carregando' : 'OK'}</Badge>}
       >
-        {bootLoading ? (
-          <div className="opacity-70">Carregando...</div>
-        ) : ativos.length === 0 ? (
-          <div className="opacity-70">Nenhum local ativo.</div>
-        ) : (
-          <div className="space-y-2">
-            {ativos.map(l => (
-              <div key={l.id} className="rounded-2xl border bg-white p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold">{l.nome}</div>
-                    <div className="mt-1 font-mono text-xs break-all text-slate-500">{l.id}</div>
-                  </div>
-                  <Button onClick={() => setAtivo(l.id, false)} disabled={loading} variant="ghost">
-                    Desativar
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
+        <div className="overflow-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-app-muted">
+                <th className="py-2 pr-4">Local</th>
+                <th className="py-2 pr-4">Status</th>
+                <th className="py-2">Ação</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr><td colSpan={4} className="py-6 text-app-muted">Sem resultados.</td></tr>
+              ) : rows.map((r) => (
+                <tr key={r.id} className="border-t border-app-border">
+                  <td className="py-3 pr-4 font-semibold">{r.nome}</td>
+                  <td className="py-3 pr-4">{r.ativo ? 'Ativo' : 'Inativo'}</td>
+                  <td className="py-3">
+                    <Button
+                      variant={r.ativo ? 'ghost' : 'secondary'}
+                      onClick={() => toggle(r.id, !r.ativo)}
+                      disabled={busyId === r.id}
+                    >
+                      {r.ativo ? 'Desativar' : 'Ativar'}
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
-      <Card
-        title="Inativos"
-        subtitle="Locais desativados (não aparecem na operação)"
-        rightSlot={<Badge tone="info">{inativos.length}</Badge>}
-      >
-        {bootLoading ? (
-          <div className="opacity-70">Carregando...</div>
-        ) : inativos.length === 0 ? (
-          <div className="opacity-70">Nenhum local inativo.</div>
-        ) : (
-          <div className="space-y-2">
-            {inativos.map(l => (
-              <div key={l.id} className="rounded-2xl border bg-white p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold">{l.nome}</div>
-                    <div className="mt-1 font-mono text-xs break-all text-slate-500">{l.id}</div>
-                  </div>
-                  <Button onClick={() => setAtivo(l.id, true)} disabled={loading} variant="secondary">
-                    Ativar
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="mt-4 flex justify-end">
+          <Button variant="secondary" onClick={() => fetchPage(false)} disabled={loading || !hasMore}>
+            {hasMore ? 'Carregar mais' : 'Fim'}
+          </Button>
+        </div>
       </Card>
     </div>
   )
