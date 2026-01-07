@@ -113,7 +113,7 @@ export default function ContagemDetalhePage() {
   }, [])
 
   const rpc = useCallback(async <T,>(fn: string, args?: Record<string, any>) => {
-    const { data, error } = await supabase.schema('app_estoque').rpc(fn, args ?? {})
+    const { data, error } = await supabase.schema('lws').rpc(fn, args ?? {})
     if (error) throw error
     return data as T
   }, [])
@@ -199,6 +199,24 @@ export default function ContagemDetalhePage() {
     if (!localId) return '-'
     return locais.find((l) => l.id === localId)?.nome ?? '-'
   }, [locais, localId])
+
+  // ✅ TABELA: modelo + variação (sempre tratar item)
+  const resumoModeloVariacao = useMemo(() => {
+    return (resumoVar ?? [])
+      .map((r) => ({
+        produto_variante_id: r.produto_variante_id,
+        modelo: (r.modelo || '-').trim() || '-',
+        variacao: (r.variacao || '-').trim() || '-',
+        total_bipado: Number(r.total_bipado ?? 0),
+      }))
+      .sort((a, b) => {
+        // total desc, modelo asc, variação asc
+        if (b.total_bipado !== a.total_bipado) return b.total_bipado - a.total_bipado
+        const am = a.modelo.localeCompare(b.modelo)
+        if (am !== 0) return am
+        return a.variacao.localeCompare(b.variacao)
+      })
+  }, [resumoVar])
 
   const scannerBloqueado = !localId || busy || !!modoLeitura
 
@@ -377,6 +395,75 @@ export default function ContagemDetalhePage() {
               </div>
             </div>
           </Card>
+
+          {/* histórico em tabela (modelo + variação) */}
+          <Card
+            title="Modelos e variações bipados"
+            subtitle="Quantidade por item (histórico desta contagem)"
+            rightSlot={
+              <Badge tone={loadingResumo ? 'warn' : 'info'}>
+                {loadingResumo ? 'Atualizando…' : 'OK'}
+              </Badge>
+            }
+          >
+            {resumoModeloVariacao.length === 0 ? (
+              <div className="text-sm text-app-muted">Ainda não há bipagens.</div>
+            ) : (
+              <div className="overflow-hidden rounded-2xl border border-app-border bg-white">
+                <table className="w-full text-sm">
+                  <thead className="border-b border-app-border">
+                    <tr className="text-left">
+                      <th className="px-4 py-2.5 font-semibold text-app-muted">Modelo</th>
+                      <th className="px-4 py-2.5 font-semibold text-app-muted">Variação</th>
+                      <th className="px-4 py-2.5 text-right font-semibold text-app-muted">Qtd</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resumoModeloVariacao.map((r) => (
+                      <tr
+                        key={r.produto_variante_id}
+                        className="border-b border-app-border last:border-b-0"
+                      >
+                        <td className="px-4 py-2.5 font-medium text-app-fg">
+                          {r.modelo}
+                        </td>
+                        <td className="px-4 py-2.5 font-medium text-app-fg">
+                          {r.variacao}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-semibold text-app-fg">
+                          {r.total_bipado}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* 🔹 ação única, discreta, Apple-like (botão real, não link cru) */}
+            <div className="mt-2 flex justify-end">
+              <button
+                onClick={carregarResumoBipagens}
+                disabled={busy || loadingResumo}
+                className="
+                  inline-flex items-center gap-1.5
+                  rounded-lg
+                  border border-app-border
+                  bg-white
+                  px-2.5 py-1
+                  text-[11px] font-medium
+                  text-app-muted
+                  hover:bg-app-hover hover:text-app-fg
+                  active:scale-[0.98]
+                  disabled:opacity-40 disabled:cursor-not-allowed
+                  transition
+                "
+              >
+                Atualizar
+              </button>
+            </div>
+
+          </Card>
         </>
       ) : (
         <>
@@ -473,49 +560,56 @@ export default function ContagemDetalhePage() {
             </div>
           </Card>
 
-          {/* Resumo por variação (novo) */}
+          {/* ✅ NOVO: histórico em tabela (modelo + variação) também no operacional */}
           <Card
-            title="Resumo por variação"
-            subtitle="O que já foi bipado nesta contagem"
+            title="Modelos e variações bipados"
+            subtitle="Quantidade por item (histórico desta contagem)"
             rightSlot={<Badge tone={loadingResumo ? 'warn' : 'info'}>{loadingResumo ? 'Atualizando…' : 'Live'}</Badge>}
           >
-            {resumoVar.length === 0 ? (
+            {resumoModeloVariacao.length === 0 ? (
               <div className="text-sm text-app-muted">Ainda não há bipagens.</div>
             ) : (
-              <div className="space-y-2">
-                {resumoVar.slice(0, 10).map((r) => (
-                  <div
-                    key={r.produto_variante_id}
-                    className="flex items-center justify-between rounded-2xl border border-app-border bg-white px-4 py-3"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-app-fg truncate">{r.modelo}</div>
-                      <div className="text-xs text-app-muted">Variação: {r.variacao || '-'}</div>
-                    </div>
-                    <div className="text-sm font-extrabold text-app-fg">{r.total_bipado}</div>
-                  </div>
-                ))}
-
-                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                  <Button
-                    className="w-full py-3"
-                    variant="ghost"
-                    onClick={carregarResumoBipagens}
-                    disabled={busy || loadingResumo}
-                  >
-                    Atualizar resumo
-                  </Button>
-                  <Button
-                    className="w-full py-3"
-                    variant="secondary"
-                    onClick={() => router.push(`/contagens/${contagemId}/resumo`)}
-                    disabled={busy}
-                  >
-                    Ver resumo completo
-                  </Button>
-                </div>
+              <div className="overflow-hidden rounded-2xl border border-app-border bg-white">
+                <table className="w-full text-sm">
+                  <thead className="border-b border-app-border">
+                    <tr className="text-left">
+                      <th className="px-4 py-3 font-semibold text-app-muted">Modelo</th>
+                      <th className="px-4 py-3 font-semibold text-app-muted">Variação</th>
+                      <th className="px-4 py-3 text-right font-semibold text-app-muted">Qtd</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resumoModeloVariacao.map((r) => (
+                      <tr key={r.produto_variante_id} className="border-b border-app-border last:border-b-0">
+                        <td className="px-4 py-3 font-semibold text-app-fg">{r.modelo}</td>
+                        <td className="px-4 py-3 font-semibold text-app-fg">{r.variacao}</td>
+                        <td className="px-4 py-3 text-right font-extrabold text-app-fg">{r.total_bipado}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
+
+            <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+              <Button
+                className="w-full py-3"
+                variant="ghost"
+                onClick={carregarResumoBipagens}
+                disabled={busy || loadingResumo}
+              >
+                Atualizar
+              </Button>
+
+              <Button
+                className="w-full py-3"
+                variant="secondary"
+                onClick={() => router.push(`/contagens/${contagemId}/resumo`)}
+                disabled={busy}
+              >
+                Ver detalhes
+              </Button>
+            </div>
           </Card>
 
           {/* Últimos bipados (novo) */}

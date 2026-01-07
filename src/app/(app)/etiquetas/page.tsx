@@ -92,14 +92,14 @@ export default function EtiquetasPage() {
       const cursor_id = opts.reset ? null : cursorId
 
       const { data, error } = await supabase
-        .schema('app_estoque')
+        .schema('lws')
         .rpc('fn_listar_etiquetas', {
           p_limit: LIMIT,
           p_status: statusParam,
           p_sku_prefix: skuPrefix.trim() ? skuPrefix.trim() : null,
           p_qr_code: qrParam,
           p_lote_id: null,
-          p_cursor_criado_em: cursor_criado_em,
+          p_cursor_created_at: cursor_criado_em,
           p_cursor_id: cursor_id,
         })
 

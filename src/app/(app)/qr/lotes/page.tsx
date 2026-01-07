@@ -79,11 +79,11 @@ export default function QrLotesPage() {
 
     try {
       const { data, error } = await supabase
-        .schema('app_estoque')
+        .schema('lws')
         .rpc('fn_listar_lotes_qr', {
           p_limit: LIMIT,
           p_q: qParam,
-          p_cursor_criado_em: opts.reset ? null : cursorCriadoEm,
+          p_cursor_created_at: opts.reset ? null : cursorCriadoEm,
           p_cursor_id: opts.reset ? null : cursorId,
         })
 

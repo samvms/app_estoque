@@ -3,7 +3,10 @@
 
 import React, { ReactNode, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase/client'
+import { logout } from '@/modules/auth'
+
 import {
   Bell,
   Boxes,
@@ -124,7 +127,7 @@ function useMockNotifications(): Notif[] {
       title: 'Recebimento ABERTO há 2 dias',
       detail: 'Verificar divergências e finalizar.',
       href: '/recebimentos',
-      createdAt: '2026-01-01T00:00:00.000Z', // ✅ fixo (sem Date)
+      createdAt: '2026-01-01T00:00:00.000Z',
       priority: 1,
     },
     {
@@ -133,12 +136,11 @@ function useMockNotifications(): Notif[] {
       title: 'Job de integração atrasado',
       detail: 'Última execução há 6h.',
       href: '/integracoes/logs',
-      createdAt: '2026-01-01T00:00:00.000Z', // ✅ fixo (sem Date)
+      createdAt: '2026-01-01T00:00:00.000Z',
       priority: 2,
     },
   ]
 }
-
 
 export function AppShell(props: {
   /** Wordmark (desktop header + sidebar expandido) */
@@ -149,23 +151,98 @@ export function AppShell(props: {
   rightSlot?: ReactNode
 }) {
   const pathname = usePathname()
+  const router = useRouter()
+
+  async function onLogout() {
+    try {
+      await logout()
+    } finally {
+      router.replace('/login')
+      router.refresh()
+    }
+  }
+
+
+  // ✅ Hydration safety: SSR + first client render iguais
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+  const pathnameSafe = mounted ? pathname : ''
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [sidebarOpenMobile, setSidebarOpenMobile] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
 
+  // ✅ GUARD: impede entrar no app sem perfil/empresa
+  const [guardReady, setGuardReady] = useState(false)
+  useEffect(() => {
+    if (!mounted) return
+    if (!pathnameSafe) return
+
+    // rotas que não devem ser guardadas
+    if (pathnameSafe.startsWith('/onboarding')) {
+      setGuardReady(true)
+      return
+    }
+
+    let alive = true
+
+    ;(async () => {
+      try {
+        const { data: sess } = await supabase.auth.getSession()
+        const session = sess?.session
+        if (!session) {
+          if (!alive) return
+          const next = encodeURIComponent(pathnameSafe || '/home')
+          router.replace(`/login?returnTo=${next}`)
+          router.refresh()
+          return
+        }
+
+        // checa perfil (mínimo e performático)
+        const { data, error } = await supabase.schema('core').rpc('fn_contexto_sessao')
+
+        if (!alive) return
+
+        if (error) {
+          console.warn('[guard] erro ao checar contexto:', error.message)
+          setGuardReady(true)
+          return
+        }
+
+        const ctx = (Array.isArray(data) ? data[0] : data) as { tem_perfil?: boolean; empresa_id?: string | null } | undefined
+        const temEmpresa = Boolean(ctx?.empresa_id)
+
+        if (!temEmpresa) {
+          router.replace('/onboarding/criar-empresa')
+          router.refresh()
+          return
+        }
+
+        setGuardReady(true)
+      } catch (e: any) {
+        if (!alive) return
+        console.warn('[guard] exceção:', e?.message ?? e)
+        setGuardReady(true)
+      }
+    })()
+
+    return () => {
+      alive = false
+    }
+  }, [mounted, pathnameSafe, router])
+
   const notifs = useMockNotifications()
   const notifCount = useMemo(() => notifs.filter((n) => n.priority <= 2).length, [notifs])
 
-  const currentLabel = labelFromPath(pathname)
+  const currentLabel = labelFromPath(pathnameSafe)
 
   const brand = props.brand ?? <span className="text-sm font-extrabold tracking-tight">App</span>
 
   // ✅ Default: usa favicon (transparente) para colapsado/mobile
   const brandIcon =
-    props.brandIcon ?? (
-      <img src="/brand/favicon/lws-48.png" alt="LWS" className="block w-9 h-9" draggable={false} />
-    )
+    props.brandIcon ?? <img src="/brand/favicon/lws-48.png" alt="LWS" className="block w-9 h-9" draggable={false} />
 
   useEffect(() => {
     try {
@@ -175,34 +252,43 @@ export function AppShell(props: {
   }, [])
 
   useEffect(() => {
+    if (!mounted) return
     try {
       localStorage.setItem('lws_sidebar_collapsed', sidebarCollapsed ? '1' : '0')
     } catch {}
-  }, [sidebarCollapsed])
+  }, [mounted, sidebarCollapsed])
 
   useEffect(() => {
     setSidebarOpenMobile(false)
-  }, [pathname])
+  }, [pathnameSafe])
 
   useEffect(() => {
-  const open = sidebarOpenMobile || notifOpen
-  const html = document.documentElement
-  const body = document.body
+    const open = sidebarOpenMobile || notifOpen
+    const html = document.documentElement
+    const body = document.body
 
-  if (open) {
-    html.classList.add('lws-scroll-lock')
-    body.classList.add('lws-scroll-lock')
-  } else {
-    html.classList.remove('lws-scroll-lock')
-    body.classList.remove('lws-scroll-lock')
+    if (open) {
+      html.classList.add('lws-scroll-lock')
+      body.classList.add('lws-scroll-lock')
+    } else {
+      html.classList.remove('lws-scroll-lock')
+      body.classList.remove('lws-scroll-lock')
+    }
+
+    return () => {
+      html.classList.remove('lws-scroll-lock')
+      body.classList.remove('lws-scroll-lock')
+    }
+  }, [sidebarOpenMobile, notifOpen])
+
+  // ✅ enquanto valida, evita "piscar" o app sem contexto
+  if (!guardReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="app-card px-5 py-4 text-sm text-app-muted">Carregando…</div>
+      </div>
+    )
   }
-
-  return () => {
-    html.classList.remove('lws-scroll-lock')
-    body.classList.remove('lws-scroll-lock')
-  }
-}, [sidebarOpenMobile, notifOpen])
-
 
   return (
     <div className="lws-shell">
@@ -211,52 +297,45 @@ export function AppShell(props: {
         <aside
           className={cx(
             'lws-sidebar hidden md:flex flex-col',
-            // ✅ um pouco mais largo no colapsado para ficar premium + dar respiro no ícone
             sidebarCollapsed ? 'w-[76px]' : 'w-[248px]'
           )}
           style={{ minHeight: 0 }}
         >
-          {/* Top area */}
           <div className={cx('px-3 py-3 flex items-center', sidebarCollapsed ? 'justify-center' : 'justify-between')}>
-            {/* Brand area */}
-            {sidebarCollapsed ? (
-              <div
-                className="flex items-center justify-center rounded-2xl"
-                style={{
-                  width: 44,
-                  height: 44,
-                  background: 'rgba(15,76,92,.08)',
-                }}
-                title="Moura LWS"
-              >
-                <div className="[&_img]:bg-transparent [&_img]:block">{brandIcon}</div>
+            <div className={cx('min-w-0', sidebarCollapsed ? 'w-full flex flex-col items-center' : '')}>
+              <div className={cx(sidebarCollapsed ? 'block' : 'hidden')} title="Moura LWS">
+                <div
+                  className="flex items-center justify-center rounded-2xl"
+                  style={{ width: 44, height: 44, background: 'rgba(15,76,92,.08)' }}
+                >
+                  <div className="[&_img]:bg-transparent [&_img]:block">{brandIcon}</div>
+                </div>
               </div>
-            ) : (
-              <div className="flex items-center gap-2 min-w-0">
+
+              <div className={cx(!sidebarCollapsed ? 'flex items-center gap-2 min-w-0' : 'hidden')}>
                 <div className="min-w-0 [&_img]:block [&_img]:bg-transparent">{brand}</div>
               </div>
-            )}
+            </div>
 
-            {/* Collapse/Expand */}
-            {!sidebarCollapsed ? (
+            <div className={cx(sidebarCollapsed ? 'mt-2' : '')}>
               <button
-                className="app-btn app-btn--ghost !px-2 !py-2 !border-0"
+                className={cx('app-btn app-btn--ghost !px-2 !py-2 !border-0', sidebarCollapsed ? 'hidden' : '')}
                 style={{ background: 'transparent' }}
                 onClick={() => setSidebarCollapsed(true)}
                 title="Recolher menu"
               >
                 <ChevronLeft size={18} />
               </button>
-            ) : (
+
               <button
-                className="app-btn app-btn--ghost !px-2 !py-2 !border-0 mt-2"
+                className={cx('app-btn app-btn--ghost !px-2 !py-2 !border-0', sidebarCollapsed ? '' : 'hidden')}
                 style={{ background: 'transparent' }}
                 onClick={() => setSidebarCollapsed(false)}
                 title="Expandir menu"
               >
                 <ChevronLeft className="rotate-180" size={18} />
               </button>
-            )}
+            </div>
           </div>
 
           <nav className="lws-sidebar-scroll px-2 pb-3" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
@@ -265,7 +344,7 @@ export function AppShell(props: {
                 {!sidebarCollapsed && <div className="lws-section-title">{sec.title}</div>}
                 <div className="flex flex-col gap-1">
                   {sec.items.map((it) => {
-                    const active = isActive(pathname, it.href)
+                    const active = isActive(pathnameSafe, it.href)
                     const Icon = it.icon
                     return (
                       <Link
@@ -286,9 +365,8 @@ export function AppShell(props: {
         </aside>
 
         {/* Sidebar mobile (drawer) */}
-        {sidebarOpenMobile && (
+        {mounted && sidebarOpenMobile && (
           <>
-            {/* backdrop acima do header pra bloquear clique no sininho */}
             <div
               className="fixed inset-0 md:hidden"
               style={{ background: 'rgba(11,18,32,.35)', zIndex: 75 }}
@@ -308,7 +386,6 @@ export function AppShell(props: {
                 minHeight: 0,
               }}
             >
-              {/* header do drawer */}
               <div className="px-3 py-3 flex items-center justify-between gap-2 shrink-0">
                 <div className="flex items-center min-w-0 gap-2">
                   <div className="[&_img]:bg-transparent shrink-0">{brandIcon}</div>
@@ -320,7 +397,6 @@ export function AppShell(props: {
                 </button>
               </div>
 
-              {/* ✅ scroll 100% garantido no mobile */}
               <nav
                 className="lws-sidebar-scroll px-2 pb-3"
                 style={{
@@ -329,9 +405,6 @@ export function AppShell(props: {
                   overflowY: 'auto',
                   WebkitOverflowScrolling: 'touch',
                   paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)',
-                  overscrollBehavior: 'contain',
-                  touchAction: 'pan-y',
-
                 }}
               >
                 {NAV.map((sec) => (
@@ -339,7 +412,7 @@ export function AppShell(props: {
                     <div className="lws-section-title">{sec.title}</div>
                     <div className="flex flex-col gap-1">
                       {sec.items.map((it) => {
-                        const active = isActive(pathname, it.href)
+                        const active = isActive(pathnameSafe, it.href)
                         const Icon = it.icon
                         return (
                           <Link key={it.href} href={it.href} className={cx('lws-nav-item', active && 'lws-nav-item--active')}>
@@ -358,7 +431,6 @@ export function AppShell(props: {
 
         {/* Main */}
         <div className="flex-1 min-w-0">
-          {/* Glass Header */}
           <header className="lws-header-glass">
             <div className="h-full px-3 md:px-5 flex items-center justify-between gap-2">
               <div className="flex items-center gap-3 min-w-0">
@@ -370,7 +442,6 @@ export function AppShell(props: {
                   <Menu size={18} />
                 </button>
 
-                {/* Mobile: icon | Desktop: wordmark */}
                 <div className="md:hidden shrink-0 [&_img]:bg-transparent">{brandIcon}</div>
                 <div className="hidden md:block shrink-0 [&_img]:bg-transparent">{brand}</div>
 
@@ -380,7 +451,6 @@ export function AppShell(props: {
                 </div>
               </div>
 
-              {/* Centro: busca global */}
               <div className="hidden lg:flex items-center gap-2 w-[420px]">
                 <div className="app-card flex items-center gap-2 px-3 py-2 w-full">
                   <Search size={16} className="opacity-70" />
@@ -388,7 +458,6 @@ export function AppShell(props: {
                 </div>
               </div>
 
-              {/* Direita */}
               <div className="flex items-center gap-2">
                 {props.rightSlot ? <div className="hidden md:flex items-center gap-2">{props.rightSlot}</div> : null}
 
@@ -408,7 +477,11 @@ export function AppShell(props: {
                   )}
                 </button>
 
-                <button className="app-btn app-btn--ghost !px-3 !py-2" title="Conta">
+                <button
+                  className="app-btn app-btn--ghost !px-3 !py-2"
+                  title="Sair"
+                  onClick={onLogout}
+                >
                   <span className="inline-flex items-center gap-2">
                     <span
                       className="inline-flex items-center justify-center w-8 h-8 rounded-full"
@@ -416,20 +489,18 @@ export function AppShell(props: {
                     >
                       SA
                     </span>
-                    <span className="hidden sm:inline text-[14px] font-extrabold">Sam</span>
+                    <span className="hidden sm:inline text-[14px] font-extrabold">Sair</span>
                   </span>
                 </button>
               </div>
             </div>
           </header>
 
-          {/* Content */}
           <main className="px-3 md:px-5 py-4 bg-app min-h-[calc(100vh-60px)]">{props.children}</main>
         </div>
       </div>
 
-      {/* Notifications Drawer */}
-      {notifOpen && (
+      {mounted && notifOpen && (
         <>
           <div className="lws-drawer-backdrop" onClick={() => setNotifOpen(false)} />
           <aside className="lws-drawer">
@@ -483,7 +554,13 @@ export function AppShell(props: {
 }
 
 /** Card/Buttons/Badge/StatCard */
-export function Card(props: { title?: string; subtitle?: string; rightSlot?: React.ReactNode; children: React.ReactNode; className?: string }) {
+export function Card(props: {
+  title?: string
+  subtitle?: string
+  rightSlot?: React.ReactNode
+  children: React.ReactNode
+  className?: string
+}) {
   return (
     <section className={cx('app-card', props.className)}>
       {props.title || props.subtitle || props.rightSlot ? (
@@ -504,9 +581,10 @@ export function Card(props: { title?: string; subtitle?: string; rightSlot?: Rea
 export function Button(
   props: React.ButtonHTMLAttributes<HTMLButtonElement> & {
     variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
+    loading?: boolean
   }
 ) {
-  const { className, variant = 'primary', children, ...rest } = props
+  const { className, variant = 'primary', children, loading, ...rest } = props
 
   return (
     <button
@@ -521,15 +599,28 @@ export function Button(
         rest.disabled && 'opacity-60 cursor-not-allowed',
         className
       )}
+      disabled={rest.disabled || !!loading}
     >
-      {children}
+      {loading ? 'Carregando…' : children}
     </button>
   )
 }
 
-export function Badge(props: { children: React.ReactNode; tone?: 'info' | 'ok' | 'warn' }) {
+export function Badge(props: { children: React.ReactNode; tone?: 'info' | 'ok' | 'warn' | 'danger' }) {
   const tone = props.tone ?? 'info'
-  return <span className={cx('app-badge', tone === 'info' && 'app-badge--info', tone === 'ok' && 'app-badge--ok', tone === 'warn' && 'app-badge--warn')}>{props.children}</span>
+  return (
+    <span
+      className={cx(
+        'app-badge',
+        tone === 'info' && 'app-badge--info',
+        tone === 'ok' && 'app-badge--ok',
+        tone === 'warn' && 'app-badge--warn',
+        tone === 'danger' && 'app-badge--warn'
+      )}
+    >
+      {props.children}
+    </span>
+  )
 }
 
 export function StatCard(props: { title: string; children: React.ReactNode; className?: string }) {

@@ -1,13 +1,13 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '@/lib/supabase/client'
-import { Card, Button, Badge, StatCard } from '@/modules/shared/ui/app'
 import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase/client'
+import { Card, Button, Badge, StatCard } from '@/modules/shared/ui/primitives'
 
-const LIMIT = 50
+const LIMIT = 40
 
-type Row = {
+type ProdutoResumo = {
   id: string
   nome_modelo: string
   ativo: boolean
@@ -17,167 +17,151 @@ type Row = {
   next_cursor_id: string | null
 }
 
-function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  const { className, ...rest } = props
-  return (
-    <input
-      {...rest}
-      className={[
-        'w-full rounded-2xl border border-app-border bg-white px-3 py-2 text-sm outline-none',
-        'focus:ring-2 focus:ring-[rgba(15,76,92,.18)]',
-        className ?? '',
-      ].join(' ')}
-    />
-  )
-}
-
 export default function ProdutosPage() {
   const router = useRouter()
-  const [prefix, setPrefix] = useState('')
-  const [rows, setRows] = useState<Row[]>([])
+
+  const [q, setQ] = useState('')
+  const [items, setItems] = useState<ProdutoResumo[]>([])
   const [loading, setLoading] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
+  const [erro, setErro] = useState<string | null>(null)
 
   const [cursorNome, setCursorNome] = useState<string | null>(null)
   const [cursorId, setCursorId] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(true)
 
-  const totalItens = rows.length
-  const totalVariantes = useMemo(() => rows.reduce((acc, r) => acc + (r.total_variantes ?? 0), 0), [rows])
-  const totalAtivas = useMemo(() => rows.reduce((acc, r) => acc + (r.total_ativas ?? 0), 0), [rows])
+  const total = useMemo(() => items.length, [items])
 
-  async function fetchPage(reset: boolean) {
-    if (loading) return
+  async function carregar(reset: boolean) {
+    setErro(null)
     setLoading(true)
-    setErr(null)
 
-    try {
-      const { data, error } = await supabase.schema('app_estoque').rpc('fn_listar_produtos_resumo_paginado', {
-        p_limit: LIMIT,
-        p_nome_prefix: prefix.trim() || null,
-        p_cursor_nome: reset ? null : cursorNome,
-        p_cursor_id: reset ? null : cursorId,
-      })
+    const cursor_nome = reset ? null : cursorNome
+    const cursor_id = reset ? null : cursorId
 
-      if (error) throw error
-      const list = (data ?? []) as Row[]
+    const { data, error } = await supabase.schema('lws').rpc('fn_listar_produtos_resumo_paginado', {
+      p_limit: LIMIT,
+      p_nome_prefix: q.trim() ? q.trim() : null,
+      p_cursor_nome: cursor_nome,
+      p_cursor_id: cursor_id,
+    })
 
-      setRows(reset ? list : rows.concat(list))
+    setLoading(false)
 
-      const last = list.length ? list[list.length - 1] : null
-      setCursorNome(last?.next_cursor_nome ?? null)
-      setCursorId(last?.next_cursor_id ?? null)
-      setHasMore(Boolean(last?.next_cursor_nome && list.length === LIMIT))
-    } catch (e: any) {
-      setErr(e?.message ?? 'Erro ao carregar produtos.')
-    } finally {
-      setLoading(false)
+    if (error) {
+      setErro(error.message ?? 'erro_ao_listar')
+      return
     }
+
+    const rows = (Array.isArray(data) ? data : []) as ProdutoResumo[]
+    if (reset) setItems(rows)
+    else setItems((prev) => [...prev, ...rows])
+
+    if (!rows.length) {
+      setHasMore(false)
+      return
+    }
+
+    const nextNome = rows[0]?.next_cursor_nome ?? null
+    const nextId = rows[0]?.next_cursor_id ?? null
+
+    setCursorNome(nextNome)
+    setCursorId(nextId)
+
+    // se veio menos que LIMIT, acabou
+    setHasMore(rows.length >= LIMIT && !!nextNome && !!nextId)
   }
 
   useEffect(() => {
-    fetchPage(true)
+    carregar(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  function limpar() {
-    setPrefix('')
-    setCursorNome(null)
-    setCursorId(null)
-    fetchPage(true)
-  }
-
   return (
     <div className="space-y-4">
-      {/* CARD “APPLE-LIKE” DE AÇÕES + FILTRO */}
       <Card
         title="Produtos"
-        subtitle="Resumo dos produtos pai"
+        subtitle="Cadastro por modelo (produto) e variações (SKU)"
         rightSlot={
-          <div className="flex items-center gap-2">
+          <div className="flex gap-2">
             <Button variant="secondary" onClick={() => router.push('/produtos/importar')}>
               Importar CSV
             </Button>
-            <Badge tone="info">Cadastro</Badge>
+            <Button onClick={() => router.push('/produtos/novo')}>Cadastrar produto</Button>
           </div>
         }
       >
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr,auto] md:items-end">
-          <div className="space-y-2">
-            <div className="text-xs font-semibold text-app-muted">Filtro</div>
-            <Input
-              value={prefix}
-              onChange={(e) => setPrefix(e.target.value)}
-              placeholder="Buscar por nome (prefixo)…"
-              inputMode="search"
-            />
-          </div>
+        <div className="grid gap-3 md:grid-cols-[1fr,auto] md:items-center">
+          <input
+            className="w-full rounded-xl border border-app-border bg-white px-3 py-3 text-sm font-medium text-app-fg outline-none
+                       focus:border-app-primary focus:ring-2 focus:ring-app-primary/20 transition"
+            placeholder="Buscar por prefixo do nome do modelo…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
 
           <div className="flex gap-2">
-            <Button variant="primary" onClick={() => fetchPage(true)} disabled={loading}>
+            <Button variant="secondary" disabled={loading} onClick={() => carregar(true)}>
               Buscar
             </Button>
-            <Button variant="ghost" onClick={limpar} disabled={loading && !prefix}>
+            <Button variant="ghost" disabled={loading} onClick={() => { setQ(''); setCursorNome(null); setCursorId(null); setHasMore(true); setItems([]); setTimeout(() => carregar(true), 0) }}>
               Limpar
             </Button>
           </div>
         </div>
 
-        <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
-          <StatCard title="Produtos (na lista)">{totalItens}</StatCard>
-          <StatCard title="Variantes (total)">{totalVariantes}</StatCard>
-          <StatCard title="Ativas (total)">{totalAtivas}</StatCard>
-        </div>
-
-        {err ? (
-          <div className="mt-3 text-sm font-semibold" style={{ color: 'var(--app-danger)' }}>
-            {err}
+        {erro ? (
+          <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+            <div className="text-sm font-semibold text-red-600">Erro</div>
+            <div className="mt-0.5 text-xs text-red-700/80">{erro}</div>
           </div>
         ) : null}
-      </Card>
 
-      {/* LISTAGEM */}
-      <Card title="Listagem" subtitle="Produto • Variantes • Ativas • Status">
-        <div className="overflow-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-app-muted">
-                <th className="py-2 pr-4">Produto</th>
-                <th className="py-2 pr-4">Variantes</th>
-                <th className="py-2 pr-4">Ativas</th>
-                <th className="py-2">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="py-8 text-app-muted">
-                    {loading ? 'Carregando…' : 'Sem dados.'}
-                  </td>
-                </tr>
-              ) : (
-                rows.map((r) => (
-                  <tr key={r.id} className="border-t border-app-border">
-                    <td className="py-3 pr-4 font-semibold text-app-fg">{r.nome_modelo}</td>
-                    <td className="py-3 pr-4 text-app-fg">{r.total_variantes}</td>
-                    <td className="py-3 pr-4 text-app-fg">{r.total_ativas}</td>
-                    <td className="py-3">
-                      <Badge tone={r.ativo ? 'ok' : 'warn'}>{r.ativo ? 'Ativo' : 'Inativo'}</Badge>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="mt-4 flex items-center justify-between">
-          <div className="text-sm text-app-muted">{rows.length} itens</div>
-          <Button variant="secondary" onClick={() => fetchPage(false)} disabled={loading || !hasMore}>
-            {loading ? 'Carregando…' : hasMore ? 'Carregar mais' : 'Fim'}
-          </Button>
+        <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
+          <StatCard title="Mostrando">{total}</StatCard>
+          <StatCard title="Página">{LIMIT}</StatCard>
+          <StatCard title="Filtro">{q.trim() ? 'Ativo' : '—'}</StatCard>
+          <StatCard title="Status">{loading ? 'Carregando' : 'OK'}</StatCard>
         </div>
       </Card>
+
+      <div className="space-y-2">
+        {items.length === 0 ? (
+          <Card title="Nenhum produto" subtitle="Cadastre manualmente ou importe um CSV.">
+            <div className="flex gap-2">
+              <Button onClick={() => router.push('/produtos/novo')}>Cadastrar produto</Button>
+              <Button variant="secondary" onClick={() => router.push('/produtos/importar')}>
+                Importar CSV
+              </Button>
+            </div>
+          </Card>
+        ) : (
+          items.map((r) => (
+            <Card
+              key={r.id}
+              title={r.nome_modelo}
+              subtitle={`Variantes: ${Number(r.total_variantes)} • Ativas: ${Number(r.total_ativas)}`}
+              rightSlot={<Badge tone={r.ativo ? 'ok' : 'warn'}>{r.ativo ? 'Ativo' : 'Inativo'}</Badge>}
+            >
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={() => router.push(`/variantes?produto=${r.id}`)}>
+                  Ver variantes
+                </Button>
+              </div>
+            </Card>
+          ))
+        )}
+      </div>
+
+      <div className="flex justify-center">
+        <Button
+          variant="secondary"
+          disabled={loading || !hasMore}
+          onClick={() => carregar(false)}
+          className="min-w-[220px]"
+        >
+          {hasMore ? (loading ? 'Carregando…' : 'Carregar mais') : 'Fim'}
+        </Button>
+      </div>
     </div>
   )
 }

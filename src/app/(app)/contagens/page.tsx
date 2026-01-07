@@ -96,7 +96,7 @@ export default function ContagensPage() {
   )
 
   const rpc = useCallback(async <T,>(fn: string, args?: Record<string, any>) => {
-    const { data, error } = await supabase.schema('app_estoque').rpc(fn, args ?? {})
+    const { data, error } = await supabase.schema('lws').rpc(fn, args ?? {})
     if (error) throw error
     return data as T
   }, [])

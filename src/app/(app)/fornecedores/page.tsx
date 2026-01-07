@@ -5,7 +5,7 @@ export default function FornecedoresPage() {
     <div className="space-y-4">
       <Card title="Fornecedores" subtitle="Cadastro">
         <div className="text-sm text-app-muted">
-          Se estiver em uso no fluxo, a gente liga via RPC.
+          Em desenvolvimento.
         </div>
       </Card>
     </div>

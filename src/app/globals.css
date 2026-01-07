@@ -214,7 +214,7 @@ body{
 }
 
 
-lws-sidebar{
+.lws-sidebar{
   height: 100dvh;         
   position: sticky;
   top: 0;
@@ -361,8 +361,6 @@ lws-sidebar{
   background: rgba(255,255,255,.72);
   border-bottom: 1px solid var(--app-border);
 }
-
-
 
 html.lws-scroll-lock,
 body.lws-scroll-lock{

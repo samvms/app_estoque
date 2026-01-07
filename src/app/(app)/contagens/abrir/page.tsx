@@ -24,7 +24,7 @@ export default function AbrirContagemPage() {
     setLoading(true)
     setErro(null)
 
-    const { data, error } = await supabase.schema('app_estoque').rpc('fn_abrir_contagem', {
+    const { data, error } = await supabase.schema('lws').rpc('fn_abrir_contagem', {
       p_tipo: tipo,
       p_local_padrao_id: null,
     })

@@ -1,14 +1,6 @@
-// src/app/(app)/layout.tsx
-import { AppShell } from '@/modules/shared/ui/app'
-import { BrandLogo } from '@/modules/shared/brand/BrandLogo'
+import type { ReactNode } from 'react'
+import AppShellClient from '@/modules/shared/ui/AppShellClient'
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <AppShell
-      brand={<BrandLogo variant="wordmark" size="md" mode="light" priority />}
-      brandIcon={<BrandLogo variant="icon" size="md" priority />}
-    >
-      {children}
-    </AppShell>
-  )
+export default function AppLayout({ children }: { children: ReactNode }) {
+  return <AppShellClient>{children}</AppShellClient>
 }

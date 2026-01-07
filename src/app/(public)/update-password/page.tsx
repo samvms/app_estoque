@@ -4,7 +4,7 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import { Card, Button, Badge } from '@/modules/shared/ui/app'
+import { Card, Button } from '@/modules/shared/ui/primitives'
 
 export default function UpdatePasswordPage() {
   const router = useRouter()
@@ -42,7 +42,8 @@ export default function UpdatePasswordPage() {
 
       setMsg('Senha atualizada com sucesso. Faça login novamente.')
       await supabase.auth.signOut()
-      router.push('/login')
+      router.replace('/login')
+      router.refresh()
     } catch (err: any) {
       setError(err?.message || 'Não foi possível atualizar a senha. Abra o link do e-mail novamente e tente.')
     } finally {
@@ -56,14 +57,15 @@ export default function UpdatePasswordPage() {
         <Card
           title="Atualizar senha"
           subtitle="Defina sua nova senha"
-          rightSlot={<Badge tone="info">Acesso</Badge>}
+          className="max-w-md mx-auto"
         >
-          <form onSubmit={handleUpdate} className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-app-fg">Nova senha</label>
+          <form onSubmit={handleUpdate} className="space-y-5">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-app-muted">Nova senha</label>
               <input
                 type="password"
-                className="w-full rounded-xl border border-app-border bg-white px-3 py-3 text-base font-medium text-app-fg outline-none"
+                className="w-full rounded-xl border border-app-border bg-white px-3 py-3 text-sm font-medium text-app-fg outline-none
+                           focus:border-app-primary focus:ring-2 focus:ring-app-primary/20 transition"
                 value={senha}
                 onChange={(e) => setSenha(e.target.value)}
                 placeholder="mín. 8 caracteres"
@@ -73,11 +75,12 @@ export default function UpdatePasswordPage() {
               />
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-app-fg">Confirmar nova senha</label>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-app-muted">Confirmar nova senha</label>
               <input
                 type="password"
-                className="w-full rounded-xl border border-app-border bg-white px-3 py-3 text-base font-medium text-app-fg outline-none"
+                className="w-full rounded-xl border border-app-border bg-white px-3 py-3 text-sm font-medium text-app-fg outline-none
+                           focus:border-app-primary focus:ring-2 focus:ring-app-primary/20 transition"
                 value={confirmar}
                 onChange={(e) => setConfirmar(e.target.value)}
                 placeholder="repita a senha"
@@ -88,23 +91,29 @@ export default function UpdatePasswordPage() {
             </div>
 
             {error ? (
-              <div className="app-card px-4 py-3">
-                <p className="text-sm font-semibold text-red-600">Erro</p>
-                <p className="mt-1 text-sm text-app-muted">{error}</p>
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                <div className="text-sm font-semibold text-red-600">Erro</div>
+                <div className="mt-0.5 text-xs text-red-700/80">{error}</div>
               </div>
             ) : msg ? (
-              <div className="app-card px-4 py-3">
-                <p className="text-sm font-semibold text-app-fg">Ok</p>
-                <p className="mt-1 text-sm text-app-muted">{msg}</p>
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                <div className="text-sm font-semibold text-emerald-700">Ok</div>
+                <div className="mt-0.5 text-xs text-emerald-800/80">{msg}</div>
               </div>
             ) : null}
 
-            <div className="grid grid-cols-1 gap-2">
-              <Button type="submit" className="w-full py-3" disabled={disabled}>
-                {loading ? 'Salvando…' : 'Salvar nova senha'}
+            <div className="space-y-2 pt-2">
+              <Button type="submit" className="w-full py-3 text-sm" disabled={disabled} loading={loading}>
+                Salvar nova senha
               </Button>
 
-              <Button type="button" variant="ghost" className="w-full py-3" onClick={() => router.push('/login')} disabled={loading}>
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full py-2 text-xs"
+                onClick={() => router.push('/login')}
+                disabled={loading}
+              >
                 Voltar
               </Button>
             </div>

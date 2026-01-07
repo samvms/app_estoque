@@ -52,7 +52,7 @@ export default function LocaisPage() {
 
     try {
       const { data, error } = await supabase
-        .schema('app_estoque')
+        .schema('lws')
         .rpc('fn_listar_locais_paginado', {
           p_limit: LIMIT,
           p_nome_prefix: nomePrefix.trim() || null,
@@ -95,7 +95,7 @@ export default function LocaisPage() {
 
     try {
       const { data, error } = await supabase
-        .schema('app_estoque')
+        .schema('lws')
         .rpc('fn_criar_local', { p_nome: nome })
 
       if (error) throw error
@@ -115,7 +115,7 @@ export default function LocaisPage() {
 
     try {
       const { error } = await supabase
-        .schema('app_estoque')
+        .schema('lws')
         .rpc('fn_toggle_local', { p_local_id: id, p_ativo: novoAtivo })
 
       if (error) throw error

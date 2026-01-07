@@ -34,7 +34,7 @@ export default function EstoquesPage() {
 
     try {
       const { data, error } = await supabase
-        .schema('app_estoque')
+        .schema('lws')
         .rpc('fn_listar_estoques_paginado', {
           p_limit: LIMIT,
           p_sku_prefix: skuPrefix.trim() || null,

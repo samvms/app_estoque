@@ -1,7 +1,7 @@
 // src/app/(app)/recebimentos/[id]/page.tsx
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 
 import { supabase } from '@/lib/supabase/client'
@@ -32,6 +32,24 @@ type QrLabelRow = {
   cor: string
   sku: string
   nome_exibicao: string
+}
+
+type ResumoModeloVariacao = {
+  produto_variante_id: string
+  modelo: string
+  variacao: string
+  total_ok: number
+  total_divergente: number
+  total: number
+  status_item: 'ABERTO' | 'OK' | 'DIVERGENTE'
+}
+
+type UltimoBipado = {
+  bipado_em: string
+  qr_code: string
+  modelo: string
+  variacao: string
+  resultado: 'OK' | 'DIVERGENTE'
 }
 
 function fmtDateTime(iso: string | null) {
@@ -89,27 +107,60 @@ export default function RecebimentoDetalhePage() {
   const [resumo, setResumo] = useState<ResumoLinha[]>([])
   const [modalFinalizar, setModalFinalizar] = useState<null | 'APROVADO' | 'REPROVADO'>(null)
 
+  // ✅ NOVO: histórico por modelo/variação + últimos bipados (no detalhe, igual contagem)
+  const [hist, setHist] = useState<ResumoModeloVariacao[]>([])
+  const [ultimos, setUltimos] = useState<UltimoBipado[]>([])
+  const [loadingHist, setLoadingHist] = useState(false)
+
   const isOperacional = useMemo(() => recebimento?.status === 'ABERTO', [recebimento?.status])
 
+  // toast (estável, sem _t no callback)
+  const toastTimerRef = useRef<number | null>(null)
   const showToast = useCallback((msg: string) => {
     setToast(msg)
-    window.clearTimeout((showToast as any)._t)
-    ;(showToast as any)._t = window.setTimeout(() => setToast(null), 2200)
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = window.setTimeout(() => setToast(null), 2200)
+  }, [])
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current)
+    }
   }, [])
 
   const rpc = useCallback(async <T,>(fn: string, args?: Record<string, any>) => {
-    const { data, error } = await supabase.schema('app_estoque').rpc(fn, args ?? {})
+    const { data, error } = await supabase.schema('lws').rpc(fn, args ?? {})
     if (error) throw error
     return data as T
   }, [])
 
   const resolverLabel = useCallback(async (qr: string) => {
-    const { data, error } = await supabase.schema('app_estoque').rpc('fn_resolver_qr_label', { p_qr_code: qr })
+    const { data, error } = await supabase.schema('lws').rpc('fn_resolver_qr_label', { p_qr_code: qr })
     if (error) return null
     const row = (Array.isArray(data) ? data[0] : null) as QrLabelRow | null
     if (!row) return null
     return `${row.nome_modelo} • ${row.cor}`
   }, [])
+
+  // ✅ NOVO: carrega histórico por modelo/variação (e últimos bipados) SEM quebrar o resto
+  // Requer RPCs:
+  // - fn_recebimento_resumo_por_variacao(p_recebimento_id uuid)
+  // - fn_recebimento_ultimos_bipados(p_recebimento_id uuid, p_limit int)
+  const carregarHistorico = useCallback(async () => {
+    if (!recebimentoId) return
+    setLoadingHist(true)
+    try {
+      const [a, b] = await Promise.all([
+        rpc<ResumoModeloVariacao[] | null>('fn_recebimento_resumo_por_variacao', { p_recebimento_id: recebimentoId }),
+        rpc<UltimoBipado[] | null>('fn_recebimento_ultimos_bipados', { p_recebimento_id: recebimentoId, p_limit: 10 }),
+      ])
+      setHist(Array.isArray(a) ? a : [])
+      setUltimos(Array.isArray(b) ? b : [])
+    } catch {
+      // não trava operação
+    } finally {
+      setLoadingHist(false)
+    }
+  }, [recebimentoId, rpc])
 
   const carregar = useCallback(async () => {
     if (!recebimentoId) return
@@ -128,12 +179,15 @@ export default function RecebimentoDetalhePage() {
 
       const resumo0 = await rpc<ResumoLinha[]>('fn_resumo_recebimento', { p_recebimento_id: recebimentoId })
       setResumo(resumo0 ?? [])
+
+      // ✅ carrega histórico em paralelo (sem travar UX)
+      void carregarHistorico()
     } catch (e: any) {
       setErro(e?.message ?? 'Erro ao carregar recebimento.')
     } finally {
       setLoading(false)
     }
-  }, [localId, recebimentoId, rpc])
+  }, [carregarHistorico, localId, recebimentoId, rpc])
 
   const refetchResumo = useCallback(async () => {
     if (!recebimentoId) return
@@ -173,7 +227,7 @@ export default function RecebimentoDetalhePage() {
         await rpc<string>('fn_registrar_conferencia_recebimento', {
           p_recebimento_id: recebimentoId,
           p_qr_code: qr,
-          p_local_id: localId, // backend já exige
+          p_local_id: localId,
           p_resultado: resultado,
         })
 
@@ -181,14 +235,16 @@ export default function RecebimentoDetalhePage() {
         const lbl = await resolverLabel(qr)
         if (lbl) setUltimoLabel(lbl)
 
+        // ✅ atualiza resumo + histórico (sem quebrar nada existente)
         await refetchResumo()
+        void carregarHistorico()
       } catch (e: any) {
         showToast(mapErroOperacao(e?.message ?? 'Erro ao registrar conferência.'))
       } finally {
         setBusy(false)
       }
     },
-    [busy, isOperacional, localId, recebimentoId, refetchResumo, resolverLabel, rpc, showToast]
+    [busy, carregarHistorico, isOperacional, localId, recebimentoId, refetchResumo, resolverLabel, rpc, showToast],
   )
 
   const finalizar = useCallback(
@@ -214,7 +270,7 @@ export default function RecebimentoDetalhePage() {
         setBusy(false)
       }
     },
-    [busy, carregar, recebimentoId, rpc, showToast]
+    [busy, carregar, recebimentoId, rpc, showToast],
   )
 
   const resumoOrdenado = useMemo(() => {
@@ -347,7 +403,6 @@ export default function RecebimentoDetalhePage() {
                   modo="continuous"
                   cooldownMs={1200}
                   aoLer={(valor) => void registrar(valor, 'OK')}
-                  // NOVO: mostra modelo+cor no overlay do scanner
                   resolverLabel={async (qr) => {
                     const lbl = await resolverLabel(qr)
                     return lbl
@@ -395,6 +450,81 @@ export default function RecebimentoDetalhePage() {
         </>
       ) : null}
 
+      {/* ✅ NOVO: Histórico por modelo/variação (igual contagens) */}
+      <Card
+        title="Resumo por variação"
+        subtitle="O que já foi recebido neste recebimento"
+        rightSlot={<Badge tone={loadingHist ? 'warn' : 'info'}>{loadingHist ? 'Atualizando…' : 'Live'}</Badge>}
+      >
+        {hist.length === 0 ? (
+          <div className="text-sm text-app-muted">Ainda não há bipagens.</div>
+        ) : (
+          <div className="space-y-2">
+            {hist.slice(0, 10).map((r) => (
+              <div
+                key={r.produto_variante_id}
+                className="flex items-center justify-between rounded-2xl border border-app-border bg-white px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-app-fg truncate">{r.modelo}</div>
+                  <div className="text-xs text-app-muted">Variação: {r.variacao || '-'}</div>
+                  <div className="mt-1 text-xs text-app-muted">
+                    OK: <b className="text-app-fg">{r.total_ok}</b> • Divergente: <b className="text-app-fg">{r.total_divergente}</b>
+                  </div>
+                </div>
+
+                <div className="flex flex-col items-end gap-1">
+                  <Badge tone={toneItem(r.status_item)}>{r.status_item}</Badge>
+                  <div className="text-sm font-extrabold text-app-fg">{r.total}</div>
+                </div>
+              </div>
+            ))}
+
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+              <Button className="w-full py-3" variant="ghost" onClick={() => void carregarHistorico()} disabled={busy || loadingHist}>
+                Atualizar resumo
+              </Button>
+              <Button
+                className="w-full py-3"
+                variant="secondary"
+                onClick={() => router.push(`/recebimentos/${recebimentoId}/resumo`)}
+                disabled={busy}
+              >
+                Ver resumo completo
+              </Button>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* ✅ NOVO: Últimos bipados (auditoria rápida) */}
+      <Card title="Últimos bipados" subtitle="Auditoria rápida (últimos 10)">
+        {ultimos.length === 0 ? (
+          <div className="text-sm text-app-muted">Nenhum QR bípado ainda.</div>
+        ) : (
+          <div className="space-y-2">
+            {ultimos.map((u, idx) => (
+              <div
+                key={`${u.qr_code}-${idx}`}
+                className="flex items-start justify-between gap-3 rounded-2xl border border-app-border bg-white px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-app-fg truncate">
+                    {u.modelo} • {u.variacao || '-'}
+                  </div>
+                  <div className="mt-0.5 text-xs text-app-muted">
+                    {fmtDateTime(u.bipado_em)} • QR: …{shortId(u.qr_code, 8)}
+                  </div>
+                </div>
+
+                <Badge tone={u.resultado === 'DIVERGENTE' ? 'warn' : 'ok'}>{u.resultado}</Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* Resumo  */}
       <Card
         title="Resumo"
         subtitle={isOperacional ? 'Atualiza após bipagens' : 'Somente leitura'}
@@ -416,8 +546,7 @@ export default function RecebimentoDetalhePage() {
                 </div>
 
                 <div className="mt-2 text-sm text-app-muted">
-                  OK: <b className="text-app-fg">{x.qtd_ok}</b> • Divergente:{' '}
-                  <b className="text-app-fg">{x.qtd_divergente}</b>
+                  OK: <b className="text-app-fg">{x.qtd_ok}</b> • Divergente: <b className="text-app-fg">{x.qtd_divergente}</b>
                 </div>
               </div>
             ))}

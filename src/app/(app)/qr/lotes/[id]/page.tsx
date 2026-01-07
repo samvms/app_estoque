@@ -26,9 +26,9 @@ type Etiqueta = {
 
 type VarianteInfo = {
   nome_modelo: string
-  cor: string
+  variacao: string
   sku: string
-  nome_exibicao: string
+  nome_exibicao: string | null
 }
 
 const TZ = 'America/Sao_Paulo'
@@ -69,6 +69,11 @@ function statusLabel(s: Etiqueta['status']) {
   return 'Cancelado'
 }
 
+function labelVariante(v: VarianteInfo) {
+  const desc = v.nome_exibicao?.trim() ? v.nome_exibicao.trim() : v.variacao
+  return `${v.nome_modelo} — ${desc}`
+}
+
 export default function QrLotePage() {
   const router = useRouter()
   const params = useParams<{ id: string }>()
@@ -97,8 +102,8 @@ export default function QrLotePage() {
 
     try {
       const [r1, r2] = await Promise.all([
-        supabase.schema('app_estoque').rpc('fn_obter_lote_qr', { p_lote_id: loteId }),
-        supabase.schema('app_estoque').rpc('fn_listar_etiquetas_lote', { p_lote_id: loteId }),
+        supabase.schema('lws').rpc('fn_obter_lote_qr', { p_lote_id: loteId }),
+        supabase.schema('lws').rpc('fn_listar_etiquetas_lote', { p_lote_id: loteId }),
       ])
 
       if (r1.error) throw r1.error
@@ -110,16 +115,16 @@ export default function QrLotePage() {
 
       setEtiquetas((r2.data ?? []) as any)
 
-      // carrega label da variante para UX (nome_modelo + variante + sku)
+      // ✅ aqui é o conserto: usar a RPC correta (fn_obter_variante_info)
       if (loteRow?.produto_variante_id) {
-        const rv = await supabase.schema('app_estoque').rpc('fn_obter_variante_info', {
+        const rv = await supabase.schema('lws').rpc('fn_obter_variante_info', {
           p_produto_variante_id: loteRow.produto_variante_id,
         })
+
         if (!rv.error) {
           const vrow = Array.isArray(rv.data) ? (rv.data[0] as VarianteInfo | undefined) : undefined
           setVariante(vrow ?? null)
         } else {
-          // não quebra a tela; só não mostra o cabeçalho da variante
           setVariante(null)
         }
       } else {
@@ -204,10 +209,7 @@ export default function QrLotePage() {
       const qrSize = Math.min(cellW, cellH) * 0.62
 
       const lt = lote?.lote_texto ? String(lote.lote_texto).trim() : ''
-      const varLine =
-        variante
-          ? `${variante.nome_modelo} — ${variante.nome_exibicao} (${variante.sku})`
-          : ''
+      const varLine = variante ? `${labelVariante(variante)} (${variante.sku})` : ''
 
       for (let i = 0; i < imprimiveis.length; i++) {
         const idxInPage = i % (cols * rowsGrid)
@@ -256,7 +258,7 @@ export default function QrLotePage() {
   return (
     <div className="space-y-4">
       <Card
-        title={variante ? `${variante.nome_modelo} — ${variante.nome_exibicao}` : 'Lote'}
+        title={variante ? labelVariante(variante) : 'Lote'}
         subtitle={variante ? `SKU ${variante.sku} • Reimpressão e conferência` : 'Reimpressão e conferência'}
         rightSlot={
           <Button onClick={carregar} variant="ghost" disabled={loading || pdfLoading}>
@@ -282,13 +284,12 @@ export default function QrLotePage() {
                   <div className="text-xs font-semibold text-app-muted">Lote ID</div>
                   <div className="mt-1 font-mono text-xs break-all text-slate-800">{lote.id}</div>
 
-                  {lote.lote_texto ? (
-                    <div className="mt-2 text-sm font-semibold text-slate-900">{lote.lote_texto}</div>
-                  ) : null}
+                  {lote.lote_texto ? <div className="mt-2 text-sm font-semibold text-slate-900">{lote.lote_texto}</div> : null}
 
                   {variante ? (
                     <div className="mt-2 text-xs text-app-muted">
-                      <b>{variante.nome_modelo}</b> • {variante.nome_exibicao} • SKU <b>{variante.sku}</b>
+                      <b>{variante.nome_modelo}</b> • {variante.nome_exibicao?.trim() ? variante.nome_exibicao : variante.variacao} • SKU{' '}
+                      <b>{variante.sku}</b>
                     </div>
                   ) : null}
                 </div>
@@ -309,11 +310,7 @@ export default function QrLotePage() {
             </div>
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <Button
-                onClick={gerarPdfA4}
-                disabled={stats.disp === 0 || pdfLoading || loading}
-                className="w-full py-3"
-              >
+              <Button onClick={gerarPdfA4} disabled={stats.disp === 0 || pdfLoading || loading} className="w-full py-3">
                 {pdfLoading ? 'Gerando PDF…' : 'Imprimir PDF A4 (Disponíveis)'}
               </Button>
 
@@ -329,11 +326,7 @@ export default function QrLotePage() {
         )}
       </Card>
 
-      <Card
-        title="Etiquetas do lote"
-        subtitle="Filtro e navegação rápida"
-        rightSlot={<Badge tone="info">{filtered.length}/{etiquetas.length}</Badge>}
-      >
+      <Card title="Etiquetas do lote" subtitle="Filtro e navegação rápida" rightSlot={<Badge tone="info">{filtered.length}/{etiquetas.length}</Badge>}>
         {bootLoading ? (
           <div className="py-8 text-sm text-app-muted">Carregando…</div>
         ) : etiquetas.length === 0 ? (
@@ -391,20 +384,10 @@ export default function QrLotePage() {
                   </select>
 
                   <div className="mt-2 flex gap-2">
-                    <Button
-                      variant="ghost"
-                      onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      disabled={page <= 1}
-                      className="w-full"
-                    >
+                    <Button variant="ghost" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1} className="w-full">
                       Anterior
                     </Button>
-                    <Button
-                      variant="ghost"
-                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                      disabled={page >= totalPages}
-                      className="w-full"
-                    >
+                    <Button variant="ghost" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages} className="w-full">
                       Próxima
                     </Button>
                   </div>

@@ -1,4 +1,4 @@
-// src/app/(app)/produtos/importar/page.tsx
+// FILE: src/app/(app)/produtos/importar/page.tsx
 'use client'
 
 import { useMemo, useRef, useState } from 'react'
@@ -10,13 +10,14 @@ import { Card, Button, Badge, StatCard } from '@/modules/shared/ui/app'
 type LinhaCsv = {
   nome_modelo?: string
   sku?: string
-  cor?: string
+  variacao?: string
 }
+
 
 type ItemImport = {
   nome_modelo: string
   sku: string
-  cor: string
+  variacao: string
 }
 
 type ToastTone = 'success' | 'error' | 'warn'
@@ -24,6 +25,7 @@ type ToastState = { open: boolean; tone: ToastTone; title: string; message?: str
 
 const MAX_BYTES = 1 * 1024 * 1024 // 1MB
 const MAX_LINHAS = 5000
+const RPC_IMPORT = 'fn_importar_produtos_csv' // Ctrl+F: RPC_IMPORT
 
 function normalize(s: any) {
   return String(s ?? '').trim()
@@ -45,7 +47,19 @@ function canonSku(s: any) {
     .trim()
     .toUpperCase()
     .replace(/\s+/g, '')
-    .replace(/[-_.]/g, '')
+}
+
+function downloadTemplate() {
+  const csv = ['nome_modelo,sku,variacao', 'Scooter 350,SC350PRETO,PRETO', 'Scooter 350,SC350AZUL,AZUL'].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'modelo-importacao-produtos.csv'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
 }
 
 function Toast({ state, onClose }: { state: ToastState; onClose: () => void }) {
@@ -73,12 +87,7 @@ function Toast({ state, onClose }: { state: ToastState; onClose: () => void }) {
             <div className="text-sm font-semibold text-app-fg">{state.title}</div>
             {state.message ? <div className="mt-1 text-sm text-app-muted">{state.message}</div> : null}
           </div>
-          <button
-            onClick={onClose}
-            className="text-sm font-semibold"
-            style={{ color: 'var(--app-fg)' }}
-            aria-label="Fechar"
-          >
+          <button onClick={onClose} className="text-sm font-semibold" style={{ color: 'var(--app-fg)' }} aria-label="Fechar">
             ✕
           </button>
         </div>
@@ -100,29 +109,16 @@ export default function ImportarProdutosPage() {
 
   const preview = useMemo(() => rows.slice(0, 10), [rows])
 
-  // Duplicados dentro do CSV (considerando SKU canônico)
   const duplicatedSkus = useMemo(() => {
-    const seen = new Map<string, string>() // canon -> first original
-    const dup = new Map<string, Set<string>>() // canon -> originals
-
+    const seen = new Set<string>()
+    const dup = new Set<string>()
     for (const it of rows) {
-      const original = String(it.sku ?? '').trim().toUpperCase()
-      const key = canonSku(it.sku)
-      if (!key) continue
-
-      if (seen.has(key)) {
-        if (!dup.has(key)) dup.set(key, new Set([seen.get(key)!]))
-        dup.get(key)!.add(original)
-      } else {
-        seen.set(key, original)
-      }
+      const k = canonSku(it.sku)
+      if (!k) continue
+      if (seen.has(k)) dup.add(k)
+      else seen.add(k)
     }
-
-    // exemplos humanos (originais)
-    return Array.from(dup.values())
-      .map((s) => Array.from(s))
-      .flat()
-      .sort()
+    return Array.from(dup.values()).sort()
   }, [rows])
 
   function showToast(tone: ToastTone, title: string, message?: string) {
@@ -138,10 +134,28 @@ export default function ImportarProdutosPage() {
     setInfo(null)
   }
 
+  function baixarModeloCsv() {
+  const csv =
+    'nome_modelo,sku,variacao\n' +
+    'Scooter 350,SC350PRETO,Preto\n' +
+    'Camisa Polo,C-POLO,Branco\n'
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'modelo-import-produtos.csv'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+
   function validarObrigatorios(item: ItemImport, idx: number) {
     if (!item.nome_modelo) return `Linha ${idx + 2}: nome_modelo obrigatório`
     if (!item.sku) return `Linha ${idx + 2}: sku obrigatório`
-    if (!item.cor) return `Linha ${idx + 2}: cor obrigatória`
+    if (!item.variacao) return `Linha ${idx + 2}: variacao obrigatória`
     return null
   }
 
@@ -197,21 +211,22 @@ export default function ImportarProdutosPage() {
         }
 
         const fields = (res.meta.fields ?? []).map(normalizeHeader)
-        const required = ['nome_modelo', 'sku', 'cor']
+        const required = ['nome_modelo', 'sku', 'variacao']
         const missing = required.filter((k) => !fields.includes(k))
 
         if (missing.length) {
           const m = `Cabeçalhos inválidos. Faltando: ${missing.join(', ')}.`
-          setErr(`${m} Obrigatório: nome_modelo, sku, cor.`)
+          setErr(`${m} Obrigatório: nome_modelo, sku, variacao.`)
           showToast('error', 'Cabeçalhos inválidos', m)
           return
         }
 
         const normalized: ItemImport[] = data.map((r) => ({
           nome_modelo: normalize(r.nome_modelo),
-          sku: canonSku(r.sku), // normaliza pro canônico
-          cor: normalize(r.cor),
+          sku: canonSku(r.sku),
+          variacao: normalize(r.variacao),
         }))
+
 
         for (let i = 0; i < normalized.length; i++) {
           const v = validarObrigatorios(normalized[i], i)
@@ -225,18 +240,8 @@ export default function ImportarProdutosPage() {
         setRows(normalized)
         setInfo(`Arquivo pronto: ${normalized.length} linhas.`)
 
-        // toast de duplicados (antes de importar)
-        const seen = new Set<string>()
-        const dup = new Set<string>()
-        for (const it of normalized) {
-          const k = canonSku(it.sku)
-          if (!k) continue
-          if (seen.has(k)) dup.add(k)
-          else seen.add(k)
-        }
-
-        if (dup.size > 0) {
-          showToast('warn', 'Arquivo com SKUs duplicados', `${dup.size} SKU(s) duplicado(s). Serão ignorados.`)
+        if (duplicatedSkus.length > 0) {
+          showToast('warn', 'Arquivo com SKUs duplicados', `${duplicatedSkus.length} SKU(s) duplicado(s). Serão ignorados.`)
         } else {
           showToast('success', 'Arquivo carregado', `${normalized.length} linhas prontas para importar.`)
         }
@@ -256,10 +261,8 @@ export default function ImportarProdutosPage() {
     setLoading(true)
 
     try {
-      const { data, error } = await supabase
-        .schema('app_estoque')
-        .rpc('fn_importar_produtos_csv', { p_itens: rows })
-
+      // Ctrl+F: ".schema('lws').rpc(RPC_IMPORT"
+      const { data, error } = await supabase.schema('lws').rpc(RPC_IMPORT, { p_itens: rows })
       if (error) throw error
 
       const row = (Array.isArray(data) ? data[0] : null) as any
@@ -272,15 +275,10 @@ export default function ImportarProdutosPage() {
       const vIns = Number(row?.variantes_inseridas ?? 0)
       const ign = Number(row?.skus_ignorados ?? 0)
 
-      if (vIns > 0 && ign === 0) {
-        showToast('success', 'Importação concluída', `Variantes importadas: ${vIns}.`)
-      } else if (vIns > 0 && ign > 0) {
-        showToast('warn', 'Importação com repetidos', `Importadas: ${vIns}. Ignoradas: ${ign}.`)
-      } else if (vIns === 0 && ign > 0) {
-        showToast('warn', 'Nada importado', `SKUs repetidos/ignorados: ${ign}.`)
-      } else {
-        showToast('warn', 'Importação concluída', 'Sem alterações.')
-      }
+      if (vIns > 0 && ign === 0) showToast('success', 'Importação concluída', `Variantes importadas: ${vIns}.`)
+      else if (vIns > 0 && ign > 0) showToast('warn', 'Importação com repetidos', `Importadas: ${vIns}. Ignoradas: ${ign}.`)
+      else if (vIns === 0 && ign > 0) showToast('warn', 'Nada importado', `SKUs repetidos/ignorados: ${ign}.`)
+      else showToast('warn', 'Importação concluída', 'Sem alterações.')
 
       if (inputRef.current) inputRef.current.value = ''
       setFileName(null)
@@ -299,44 +297,64 @@ export default function ImportarProdutosPage() {
     <div className="space-y-4">
       <Toast state={toast} onClose={() => setToast((s) => ({ ...s, open: false }))} />
 
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[20px] font-extrabold tracking-tight text-app-fg">Importar produtos</div>
+          <div className="mt-1 text-sm text-app-muted">CSV local • sem fotos • sem anexos</div>
+        </div>
+
+        <div className="flex gap-2 shrink-0">
+          <Button variant="secondary" onClick={() => router.push('/produtos')}>
+            Produtos
+          </Button>
+          <Button variant="secondary" onClick={() => router.push('/produtos/novo')}>
+            Cadastro manual
+          </Button>
+        </div>
+      </div>
+
       <Card
-        title="Importar produtos"
-        subtitle="CSV local • o arquivo não é salvo"
+        title="Importação em massa"
+        subtitle="Cabeçalhos obrigatórios: nome_modelo, sku, variacao"
         rightSlot={
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => router.push('/produtos')}>
-              Produtos
+            <Button variant="ghost" onClick={downloadTemplate} disabled={loading}>
+              Baixar modelo CSV
             </Button>
-            <Button variant="secondary" onClick={() => router.push('/home')}>
-              Home
+            <Button variant="ghost" onClick={resetAll} disabled={loading}>
+              Limpar
             </Button>
           </div>
         }
       >
         {err ? (
-          <div className="text-sm font-semibold" style={{ color: 'var(--app-danger)' }}>
-            {err}
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+            <div className="text-sm font-semibold text-red-600">Erro</div>
+            <div className="mt-0.5 text-xs text-red-700/80">{err}</div>
           </div>
         ) : null}
-        {info ? <div className="text-sm font-semibold text-app-muted">{info}</div> : null}
+
+        {info ? <div className="mt-2 text-sm font-semibold text-app-muted">{info}</div> : null}
 
         {duplicatedSkus.length ? (
-          <div className="mt-2 text-sm font-semibold" style={{ color: 'var(--app-danger)' }}>
-            Atenção: {duplicatedSkus.length} SKU(s) duplicado(s) no CSV. Duplicados serão ignorados.
-            <div className="mt-1 text-xs text-app-muted">
-              Exemplos: <span className="font-mono">{duplicatedSkus.slice(0, 10).join(', ')}</span>
+          <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <div className="text-sm font-semibold" style={{ color: 'rgb(146,64,14)' }}>
+              Atenção: {duplicatedSkus.length} SKU(s) duplicado(s) no CSV
+            </div>
+            <div className="mt-0.5 text-xs" style={{ color: 'rgba(146,64,14,.85)' }}>
+              Serão ignorados. Exemplos:{' '}
+              <span className="font-mono">{duplicatedSkus.slice(0, 10).join(', ')}</span>
               {duplicatedSkus.length > 10 ? '…' : ''}
             </div>
           </div>
         ) : null}
 
-        {/* Step 1 */}
         <div className="app-card mt-3">
           <div className="flex items-start justify-between gap-3 border-b border-app-border px-4 py-3">
             <div className="min-w-0">
               <div className="text-sm font-semibold text-app-fg">1) Selecionar CSV</div>
               <div className="mt-0.5 text-xs text-app-muted">
-                Cabeçalhos obrigatórios: <span className="font-mono">nome_modelo, sku, variacao</span>
+                Obrigatório: <span className="font-mono">nome_modelo, sku, variacao</span>
               </div>
             </div>
             <Badge tone={rows.length ? 'ok' : 'info'}>{rows.length ? 'Pronto' : 'CSV'}</Badge>
@@ -351,18 +369,9 @@ export default function ImportarProdutosPage() {
               className="sr-only"
             />
 
-            <div className="grid grid-cols-1 gap-2 md:grid-cols-[auto,auto,1fr] md:items-center">
-              <Button
-                variant="secondary"
-                onClick={() => inputRef.current?.click()}
-                disabled={loading}
-                className="w-full md:w-auto"
-              >
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-[auto,1fr] md:items-center">
+              <Button variant="secondary" onClick={() => inputRef.current?.click()} disabled={loading} className="w-full md:w-auto">
                 Selecionar CSV
-              </Button>
-
-              <Button variant="ghost" onClick={resetAll} disabled={loading} className="w-full md:w-auto">
-                Limpar
               </Button>
 
               <div className="app-card px-3 py-2 text-sm">
@@ -385,12 +394,11 @@ export default function ImportarProdutosPage() {
           </div>
         </div>
 
-        {/* Step 2 */}
         <div className="app-card">
           <div className="flex items-start justify-between gap-3 border-b border-app-border px-4 py-3">
             <div className="min-w-0">
               <div className="text-sm font-semibold text-app-fg">2) Importar</div>
-              <div className="mt-0.5 text-xs text-app-muted">A importação cria produtos e variantes (SKU).</div>
+              <div className="mt-0.5 text-xs text-app-muted">Cria produtos e variantes (SKU) para a empresa atual.</div>
             </div>
 
             <Badge tone={duplicatedSkus.length ? 'warn' : podeImportar ? 'ok' : 'info'}>
@@ -411,7 +419,6 @@ export default function ImportarProdutosPage() {
           </div>
         </div>
 
-        {/* Preview */}
         <Card title="Prévia" subtitle="Primeiras 10 linhas" rightSlot={<Badge tone="info">{preview.length}</Badge>}>
           {rows.length === 0 ? (
             <div className="text-app-muted">Selecione um CSV para ver a prévia.</div>
@@ -421,33 +428,13 @@ export default function ImportarProdutosPage() {
                 <div key={`${r.sku}-${i}`} className="app-card px-4 py-3">
                   <div className="text-sm font-semibold text-app-fg">{r.nome_modelo}</div>
                   <div className="mt-1 text-sm text-app-muted">
-                    {r.cor} • <span className="font-mono">{r.sku}</span>
+                    {r.variacao} • <span className="font-mono">{r.sku}</span>
                   </div>
                 </div>
               ))}
             </div>
           )}
         </Card>
-
-        {/* Lista duplicados (leve) */}
-        {duplicatedSkus.length ? (
-          <Card
-            title="SKUs duplicados no arquivo"
-            subtitle="Serão ignorados pelo sistema"
-            rightSlot={<Badge tone="warn">{duplicatedSkus.length}</Badge>}
-          >
-            <div className="text-sm text-app-muted">
-              Mostrando até 30:
-              <div className="mt-2 flex flex-wrap gap-2">
-                {duplicatedSkus.slice(0, 30).map((s) => (
-                  <span key={s} className="app-badge app-badge--warn font-mono">
-                    {s}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </Card>
-        ) : null}
       </Card>
     </div>
   )
